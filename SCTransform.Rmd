@@ -1,0 +1,456 @@
+---
+title: "Single cell Seurat/SCTransform"
+date: "2023-11-08"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+# Objective
+
+1. Perform standard preprocessing steps
+2. Integration using Harmony
+3. Clustering and trick for fine-tune UMPA plots (finding best UMAP plots)
+
+# Load the required library 
+``` {r, warning= FALSE}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+```
+
+# Load individual data of each samples
+``` {r}
+#164S !
+A164S<- Read10X(data.dir = "164S")
+A164S2<- Read10X(data.dir = "164S2")
+
+#184S !
+A184S2<- Read10X(data.dir = "184S2")
+A184S3<- Read10X(data.dir = "184S3")
+
+#218S !
+A218S<- Read10X(data.dir = "218S")
+A218S2<- Read10X(data.dir = "218S2")
+
+#SA !
+ASA5<- Read10X(data.dir = "SA5")
+ASA6<- Read10X(data.dir = "SA6")
+ASA7<- Read10X(data.dir = "SA7")
+```
+
+# Create Seurat Object
+```{r, echo=FALSE}
+#164S !
+A164S<- CreateSeuratObject(counts = A164S, project = "164S", min.cells = 3, min.features = 200)
+
+#164S2 !
+A164S2<- CreateSeuratObject(counts = A164S2, project = "164S2", min.cells = 3, min.features = 200)
+
+#184S2 !
+A184S2<- CreateSeuratObject(counts = A184S2, project = "184S2", min.cells = 3, min.features = 200)
+
+#184S3 !
+A184S3<- CreateSeuratObject(counts = A184S3, project = "184S3", min.cells = 3, min.features = 200)
+
+#218S !
+A218S<- CreateSeuratObject(counts = A218S, project = "218S", min.cells = 3, min.features = 200)
+
+#A218S2 ! 
+A218S2<- CreateSeuratObject(counts = A218S2, project = "218S2", min.cells = 3, min.features = 200)
+
+#SA5 !
+ASA5<- CreateSeuratObject(counts = ASA5, project = "SA5", min.cells = 3, min.features = 200)
+
+#ASA6 !
+ASA6<- CreateSeuratObject(counts = ASA6, project = "SA6", min.cells = 3, min.features = 200)
+
+#SA7 !
+ASA7<- CreateSeuratObject(counts = ASA7, project = "SA7", min.cells = 3, min.features = 200)
+```
+
+# Adding type variable to seurat object (e.g., First arthritis, recurrent arthritis and Osteoarthritis)
+``` {r}
+A164S$type= "First arthritis"  
+A184S2$type = "First arthritis" 
+A218S$type = "First arthritis"  
+A164S2$type= "Second arthritis"  
+A184S3$type = "Second arthritis" 
+A218S2$type = "Second arthritis" 
+ASA5$type = "Osteoarthritis"
+ASA6$type = "Osteoarthritis"
+ASA7$type = "Osteoarthritis"
+``` 
+
+# Merge Seurat Object and plot unfiltered cells
+``` {r, fig.width= 9, fig.height= 5}
+#merge objects
+Arthritis.merge<- merge(A164S, y=c(A164S2, A184S2, A184S3, A218S, A218S2, ASA5, ASA6, ASA7))
+
+#set percent MT
+Arthritis.merge<- PercentageFeatureSet(Arthritis.merge, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered<- VlnPlot(Arthritis.merge, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered
+```
+
+
+# Filter low quality cells based on nFeatureRNA, nCountRNA and % Mitochondria genes
+``` {r, fig.width= 9, fig.height= 5}
+#Set the bar!
+Filtered.cells <- subset(Arthritis.merge, subset = nFeature_RNA >500 
+              & nFeature_RNA <5500 & nCount_RNA>800 & nCount_RNA <31000 & percent.mt < 15)
+
+#save object
+saveRDS(Filtered.cells, file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/Filtered_cells.RDS")
+
+
+#plot filtered cells!  
+Filtered<- VlnPlot(Filtered.cells, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered
+``` 
+
+#plot unfiltered & filtered cells in paralell
+``` {r, fig.width= 9, fig.height= 10}
+library(patchwork)
+plot1<- unfiltered/Filtered
+plot1
+
+#
+
+#save high quality plot 
+ggsave("plot1.tiff" , plot = plot1, height=8, width = 9, units = "in",  dpi=300)
+```
+
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Arthritis.merge.flt <- Filtered.cells[!grepl("MALAT1", rownames(Filtered.cells)), ]
+
+# Filter Mitocondria
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MT-", rownames(Arthritis.merge.flt)), ]
+
+#Mitochondria
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MT\\.", rownames(Arthritis.merge.flt)), ]
+
+#Filter gene LOC
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^LOC(0-9)", rownames(Arthritis.merge.flt)), ]
+
+# Filter Ribossomal gene 
+Arthritis.merge.flt <- Arthritis.merge.flt[ ! grepl('^RP[SL]', rownames(Arthritis.merge.flt)), ]
+
+# HSPA
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^HSPA", rownames(Arthritis.merge.flt)), ]
+
+# MTRNR
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MTRNR", rownames(Arthritis.merge.flt)), ]
+
+# TR pattern
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^TR(A|B|G|D)V", rownames(Arthritis.merge.flt)), ]
+```  
+
+# Normalize cell using SCTransform
+
+``` {r}
+#SCTransform
+Arthritis<- SCTransform(Arthritis.merge.flt, 
+                        method= "glmGamPoi", 
+                        vars.to.regress = "percent.mt", 
+                        verbose= FALSE)
+
+#save SCTransform object
+saveRDS(Arthritis, file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/SCTranform.RDS")
+
+#read normalize SCTransform back in 
+Arthritis<- readRDS("SCTranform.RDS")
+``` 
+
+
+# plot Feature-Feature relationship
+``` {r, fig.width= 10, fig.height= 5}
+#Visualize feature-feature relationship 
+#
+plot2 <- FeatureScatter(Arthritis, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+plot3 <- FeatureScatter(Arthritis, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident") + theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+plot2|plot3 
+```
+
+
+
+# Perform dimensionality reduction by PCA and plot PC components
+``` {r}
+
+#Run PCA
+Arthritis<- RunPCA(Arthritis, verbose = FALSE)
+
+#Elbow plot
+ElbowPlot(Arthritis, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+
+# Heatmap for Deg
+
+``` {r, fig.width= 8, fig.height= 5}
+DimHeatmap(Arthritis, dims = 1:3, cells = 500, balanced = TRUE)
+``` 
+
+# Integration using harmony
+``` {r}
+library(harmony)
+set.seed(12345)
+Arthritis<- RunHarmony(Arthritis ,group.by.vars = "orig.ident")
+```
+
+# Find Neighbors and clusters
+``` {r, fig.width= 8, fig.height= 10}
+set.seed(12345)
+Arthritis<- FindNeighbors(Arthritis, reduction = "harmony", dims = 1:30, verbose = FALSE)
+
+#run resolution between 0 and 1
+resolution_values <- seq(0, 1, by = 0.1)
+Arthritis.clustree<- FindClusters(Arthritis, resolution = resolution_values, random.seed = 12345, verbose = FALSE)
+``` 
+
+# examine cluster tree to deterine the optimal resolution 
+
+``` {r, fig.width= 8, fig.height= 9}
+library(clustree)
+clustree(Arthritis.clustree)
+```
+# Save cluster tree object
+
+``` {r}
+saveRDS(Arthritis, file ="Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/Cluster.tree.RDS")
+``` 
+
+# Investigate various min.dist value of RunUMAP function
+
+``` {r}
+# Determine the min.dist values you want to test
+min_dist_values <- c(0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01, 0.005, 0.001)  
+
+# Create a list to store the plots
+plot_list <- list()
+
+for(dist in min_dist_values){
+    Arthritis <- RunUMAP(object = Arthritis ,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = dist)
+
+    Arthritis <- FindNeighbors(object = Arthritis, reduction="harmony", dims = 1:30)
+    snn.obj <- FindClusters(object = Arthritis, resolution = 0.2, random.seed = 12345)
+    
+    umap_plot <- DimPlot(snn.obj, reduction="umap", ncol=2, group.by = "seurat_clusters") +
+      ggtitle(paste("UMAP Plot (min.dist =", dist, ")"))
+    
+    # Append the plot to the list
+    plot_list[[as.character(dist)]] <- umap_plot
+}
+```
+
+## Combine all plots into a single figure.
+``` {r}
+library(ggplot2)
+library(gridExtra)
+
+# Calculate the number of rows and columns for the grid
+total_plots <- length(min_dist_values)
+n_rows <- ceiling(sqrt(total_plots))
+n_cols <- ceiling(total_plots / n_rows)
+
+# Combine all plots into a flexible grid
+combined_plot <- do.call(grid.arrange, c(plot_list, ncol = n_cols, nrow = n_rows))
+
+# Save the combined plot
+ggsave("combined_min_dist_plots.png", combined_plot, height=18, width=20)
+``` 
+
+Comments: I saved these combined min.dist plots and can be viewed outside R Markdown. 
+
+
+## Or Save individual plot of min.dist separately  
+``` {r}
+# Create a directory to save the plots 
+dir.create("min_dist_plots", showWarnings = FALSE)
+
+#iterate through various min.dist values
+for(dist in c(0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01, 0.005, 0.001)){
+    Arthritis.dist <- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = dist)
+
+    Arthritis.dist <- FindNeighbors(object = Arthritis.dist, reduction="harmony", dims = 1:30)
+    snn.obj.dist <- FindClusters(object = Arthritis.dist, resolution = 0.2)
+    
+    umap_plot.dist <- DimPlot(snn.obj.dist, reduction="umap", group.by = "seurat_clusters", label = TRUE) +
+      NoLegend() +
+      ggtitle(paste("UMAP Plot (min.dist =", dist, ")"))
+    
+    
+    #Save the plot
+    plot_filename <- paste0("min_dist_plots/UMAP_min_dist_", dist, ".png")
+    ggsave(filename = plot_filename, plot = umap_plot.dist, height=4, width=5, dpi=300)
+}
+``` 
+
+# Examine various resolution values
+``` {r}
+# Create a directory to save the plots 
+dir.create("Resolution_plots", showWarnings = FALSE)
+# Run UMAP
+Arthritis.res<- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.01)
+Arthritis.res <- FindNeighbors(object =  Arthritis.res, reduction="harmony", dims = 1:30)
+
+#iterate through various value of resolutions 
+for(res in c(0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)){
+    snn.obj.res <- FindClusters(object = Arthritis.res, resolution = res, random.seed = 12345, verbose = FALSE)
+    
+    umap_plot_res <- DimPlot(snn.obj.res, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE) +
+      NoLegend() +
+      ggtitle(paste("UMAP Plot (resolution =", res, ")"))
+    
+    #Save the plot
+    plot_filename_res <- paste0("Resolution_plots/UMAP_resoltuion_", res, ".png")
+    ggsave(filename = plot_filename_res, plot = umap_plot_res, height=4, width=7, dpi=300)
+    
+}
+``` 
+
+# Testing various value of spread of RunUMAP function
+
+``` {r}
+# Create a directory to save the plots 
+dir.create("spread_plots", showWarnings = FALSE)
+
+#iterate through various min.dist values
+for(spr in c(0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4)){
+    Arthritis.spr <- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.01, spread = spr)
+
+    Arthritis.spr <- FindNeighbors(object = Arthritis.spr, reduction="harmony", dims = 1:30)
+    snn.obj.spr <- FindClusters(object = Arthritis.spr, resolution = 0.6)
+    
+    umap_plot_spr <- DimPlot(snn.obj.spr, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE) +
+      NoLegend() +
+      ggtitle(paste("UMAP Plot (spread =", spr, ")"))
+    
+    
+    #Save the plot
+    plot_filename_spr <- paste0("spread_plots/UMAP_spread_", spr, ".png")
+    ggsave(filename = plot_filename_spr, plot = umap_plot_spr, height=4, width=7, dpi=300)
+}
+``` 
+
+
+# Findning optimal number of n.neighbor of RunUMAP
+
+``` {r}
+# Create a directory to save the plots 
+dir.create("neighbors_plots", showWarnings = FALSE)
+
+#iterate through various min.dist values
+for(neigh in c(5, 10, 15, 20, 25, 30, 35, 40, 45, 50)){
+    Arthritis.neigh <- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.1, spread = 3.5, n.neighbors = neigh)
+
+    Arthritis.neigh  <- FindNeighbors(object = Arthritis.neigh , reduction="harmony", dims = 1:30)
+    snn.obj.neigh <- FindClusters(object = Arthritis.neigh, resolution = 0.6, random.seed = 12345)
+    
+    umap_plot_neigh <- DimPlot(snn.obj.neigh, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE) +
+      NoLegend() +
+      ggtitle(paste("UMAP Plot (n.neighbors =", neigh, ")"))
+    
+    
+    #Save the plot
+    plot_filename_neigh <- paste0("neighbors_plots/neighbor", neigh, ".png")
+    ggsave(filename = plot_filename_neigh , plot = umap_plot_neigh, height=4, width=7, dpi=300)
+}
+``` 
+
+# Run single UMAP using optimal value found in previous section. 
+``` {r}
+#read normalize files back in 
+Arthritis.singleparam<- readRDS("SCTranform.RDS")
+
+#Run PCA
+Arthritis.singleparam<- RunPCA(Arthritis.singleparam,seed.use = 12345, verbose = FALSE)
+
+#Elbow plot
+ElbowPlot(Arthritis.singleparam, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#Run single UMAP with optimal parameter!
+
+``` {r, fig.width= 6, fig.height= 4}
+library(harmony)
+set.seed(12345)
+
+#integration
+UMAP.singlparam<- RunHarmony(Arthritis,group.by.vars = "orig.ident")
+
+#RUNUMAP pipeline 
+UMAP.singlparam<- FindNeighbors(UMAP.singlparam, reduction = "harmony", dims = 1:40, verbose = FALSE)
+UMAP.singlparam<- FindClusters(UMAP.singlparam, resolution = 0.4)
+UMAP.singlparam<- RunUMAP(object = UMAP.singlparam,
+                          reduction = "harmony",
+                          dims = 1:40)
+
+
+#plot umap 
+DimPlot(UMAP.singlparam, reduction= "umap", label = TRUE, repel = FALSE
+        ) +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+## T cell subsets
+``` {r, fig.width= 7, fig.height= 5}
+
+FeaturePlot(UMAP.singlparam, features = c("CD3E", "CD8A", "CD4", "FOXP3"), pt.size = 0.2,
+    ncol = 2)
+```
+
+
+``` {r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

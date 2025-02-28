@@ -1,0 +1,310 @@
+---
+title: "Single_cell_sk_QC"
+output: html_document
+date: "2023-11-29"
+---
+
+# Get Data 
+
+``` {r}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(DoubletFinder)
+require(Matrix)
+
+#load data using Read10X function
+#164S !
+A164S<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/164S/")
+A164S2<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/164S2/")
+
+#184S !
+A184S2<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/184S2/")
+A184S3<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/184S3/")
+
+#218S !
+A218S<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/218S/")
+A218S2<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/218S2/")
+
+#SA !
+ASA5<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/SA5/")
+ASA6<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/SA6/")
+ASA7<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/SA7/")
+```
+
+# Create Seurat Objects
+```{r}
+A164S<- CreateSeuratObject(counts = A164S, project = "164S", min.cells = 3, min.features = 200)
+A164S2<- CreateSeuratObject(counts = A164S2, project = "164S2", min.cells = 3, min.features = 200)
+A184S2<- CreateSeuratObject(counts = A184S2, project = "184S2", min.cells = 3, min.features = 200)
+A184S3<- CreateSeuratObject(counts = A184S3, project = "184S3", min.cells = 3, min.features = 200)
+A218S<- CreateSeuratObject(counts = A218S, project = "218S", min.cells = 3, min.features = 200)
+A218S2<- CreateSeuratObject(counts = A218S2, project = "218S2", min.cells = 3, min.features = 200)
+ASA5<- CreateSeuratObject(counts = ASA5, project = "SA5", min.cells = 3, min.features = 200)
+ASA6<- CreateSeuratObject(counts = ASA6, project = "SA6", min.cells = 3, min.features = 200)
+ASA7<- CreateSeuratObject(counts = ASA7, project = "SA7", min.cells = 3, min.features = 200)
+
+# Add metadata
+A164S$type= "First arthritis"  
+A184S2$type = "First arthritis" 
+A218S$type = "First arthritis"  
+A164S2$type= "Second arthritis"  
+A184S3$type = "Second arthritis" 
+A218S2$type = "Second arthritis" 
+ASA5$type = "Osteoarthritis"
+ASA6$type = "Osteoarthritis"
+ASA7$type = "Osteoarthritis"
+
+#Merge Seurat object
+alldata<- merge(A164S, c(A164S2, A184S2, A184S3, A218S, A218S2, ASA5, ASA6, ASA7))
+
+#remove all objects to reduce memory 
+rm(A164S, A164S2, A184S2, A184S3, A218S, A218S2, ASA5, ASA6, ASA7)
+
+#Run garbage collect to free up memory 
+gc()
+```
+
+Here it is how the count matrix and the metatada look like for every cell.
+
+``` {r}
+as.data.frame(alldata@assays$RNA@counts[1:10, 1:2])
+```
+
+# Calculate QC 
+
+``` {r}
+#Percentage mitochondria and ribosomal genes
+alldata <- PercentageFeatureSet(alldata, "^MT-", col.name = "percent_mito")
+alldata <- PercentageFeatureSet(alldata, "^RP[SL]", col.name = "percent_ribo")
+```
+
+# Plot QC 
+
+``` {r, fig.width= 10, fig.height= 7}
+feats <- c("nFeature_RNA", "nCount_RNA", "percent_mito", "percent_ribo")
+VlnPlot(alldata, group.by = "orig.ident", features = feats, pt.size = 0.1, ncol = 2) +
+    NoLegend()
+``` 
+
+``` {r}
+FeatureScatter(alldata, "nCount_RNA", "nFeature_RNA", group.by = "orig.ident", pt.size = 0.5) + 
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+# Remove low quality cells 
+
+``` {r, fig.width= 10, fig.height= 7}
+#filtered low quality cells
+data.filt<- subset(alldata, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 6500 & nCount_RNA> 500 & nCount_RNA <46000 & percent_mito < 15 
+              & percent_ribo< 40)
+VlnPlot(data.filt, group.by = "orig.ident", features = feats, pt.size = 0.1, ncol = 2)
+``` 
+
+``` {r}
+FeatureScatter(data.filt, "nCount_RNA", "nFeature_RNA", group.by = "orig.ident", pt.size = 0.5) + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# genes contribute the most to such reads
+
+``` {r}
+par(mar = c(4, 8, 2, 1))
+C <- data.filt@assays$RNA@counts
+C <- Matrix::t(Matrix::t(C)/Matrix::colSums(C)) * 100
+most_expressed <- order(apply(C, 1, median), decreasing = T)[20:1]
+
+#plot gene 
+boxplot(as.matrix(t(C[most_expressed, ])), cex = 0.1, las = 1, xlab = "% total count per cell",
+    col = (scales::hue_pal())(20)[20:1], horizontal = TRUE)
+dev.off()
+``` 
+
+# Filter genes
+
+``` {r}
+dim(data.filt)
+
+# Filter MALAT1
+data.filt <- data.filt[!grepl("MALAT1", rownames(data.filt)), ]
+
+# Filter Mitocondrial
+data.filt <- data.filt[!grepl("^MT-", rownames(data.filt)), ]
+
+# Filter Ribossomal gene (Optional)
+data.filt <- data.filt[ ! grepl('^RP[SL]', rownames(data.filt)), ]
+
+# Filter Hemoglobin gene (optional)
+data.filt.f <- data.filt[!grepl("^HB[^(P)]", rownames(data.filt)), ]
+``` 
+
+# Calculate cell-cycle scores (did not work for seurat V5)
+
+``` {r, fig.width= 10, fig.height= 3 }
+data.filt.st.seurat<- NormalizeData(data.filt.f, normalization.method = "")
+
+#cell cycle 
+data.filt.st.seurat<- CellCycleScoring(data.filt.st.seurat, g2m.features = cc.genes$s.genes, s.features = cc.genes$g2m.genes, set.ident = TRUE)
+VlnPlot(data.filt.st.seurat, features = c("S.Score", "G2M.Score"), group.by = "orig.ident",
+    ncol = 4, pt.size = 0.1)
+``` 
+# Finding highly variable genes 
+
+``` {r, warning= FALSE, fig.width= 7, fig.height= 5}
+data.filt.st.seurat<- FindVariableFeatures(data.filt.st.seurat, selection.method = "vst", verbose = FALSE, nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(data.filt.st.seurat), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(data.filt.st.seurat)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+```
+
+# Scaling and regress out noise features
+``` {r}
+all.genes<- rownames(data.filt.st.seurat)
+data.filt.st.seurat<- ScaleData(data.filt.st.seurat, 
+                      vars.to.regress = c(
+                        "nCount_RNA","nFeature_RNA", "percent_mito", 
+                                          "percent_ribo", "S.Score", "G2M.Score"
+                        ), 
+                      verbose= FALSE)
+data.filt.st.seurat<- RunPCA(data.filt.st.seurat, verbose = FALSE)
+
+#save data.filt object
+saveRDS(data.filt.st.seurat, file = "data.filt.seurat.RDS")
+```
+
+# Find variable features, scaling and PCA
+
+``` {r}
+
+#Plot PC components ! 
+ElbowPlot(data.filt.st.seurat, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+# Heatmap of highly variable genes
+```{r, fig.width= 8, fig.height= 5}
+DimHeatmap(data.filt.st.seurat, dims = 1:6, cells = 500, ncol = 3, balanced = TRUE)
+``` 
+
+
+# Integration 
+
+``` {r, fig.width= 6, fig.height= 5}
+library(harmony)
+
+#run Harmony integration
+Arthritis.seurat<- RunHarmony(data.filt.st.seurat, group.by.vars = c("orig.ident"))
+Arthritis.seurat<- FindNeighbors(object = Arthritis.seurat, reduction="harmony", dims = 1:40)
+Arthritis.seurat<- FindClusters(object = Arthritis.seurat, resolution = 0.7, random.seed = 12345)
+
+#RUN TSNE
+Arthritis.seurat.tsne<- RunTSNE(Arthritis.seurat, 
+                                reduction = "harmony", dims = 1:40)
+
+#plot non-linear dimentionality reduction
+DimPlot(Arthritis.seurat.tsne, reduction = "tsne", label = TRUE) +
+  theme_void() +
+  NoLegend()
+```
+
+
+# SCT pipeline 
+
+``` {r}
+#First round of SCT
+library(sctransform)
+data.filt.sct<- SCTransform(data.filt.f, 
+                        assay = "RNA", 
+                        new.assay.name = "SCT" , 
+                        vars.to.regress = c("percent_mito", 
+                                            "nFeature_RNA", 
+                                            "nCount_RNA", 
+                                            "percent_ribo"), 
+                        verbose = FALSE)
+
+#Cell cycle score 
+data.filt.sct<- CellCycleScoring(
+ data.filt.sct,
+  s.features = cc.genes$s.genes,
+  g2m.features = cc.genes$g2m.genes,
+  assay = 'SCT',
+  set.ident = TRUE
+  )
+
+#normalise again but this time including also the cell cycle scores
+data.filt.sct<- SCTransform(
+data.filt.sct,
+assay = 'RNA',
+ new.assay.name = 'SCT',
+ vars.to.regress = c('percent_mito', 
+                     "percent_ribo", 
+                     "nFeature_RNA", 
+                     "nCount_RNA", 
+                     "S.Score", 
+                     "G2M.Score"),
+verbose = FALSE
+ )
+
+# RUN PCA 
+data.filt.sct <- RunPCA(data.filt.sct, seed.use = 12345,verbose = FALSE, assay = "SCT", npcs = 50)
+
+#plot 
+#PC component plot
+ElbowPlot(data.filt.sct, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+
+# Integration 
+
+``` {r, fig.width= 4, fig.height= 4}
+Arthritis.Harmony.sct<- RunHarmony(data.filt.sct, group.by.vars = c("orig.ident"))
+Arthritis.integration<- FindNeighbors(object = Arthritis.Harmony.sct, reduction="harmony", dims = 1:45)
+Arthritis.integration<- FindClusters(object = Arthritis.integration, resolution = 0.3, random.seed = 12345)
+Arthritis.integration<- RunUMAP(object = Arthritis.integration, 
+                                reduction = "harmony", 
+                                dims = 1:40,
+                                seed.use = 12345)
+#Dimplot 
+DimPlot(Arthritis.integration, 
+        reduction = "umap", 
+        label = TRUE, 
+        label.size = 3) + 
+  theme_minimal() +
+  NoLegend() + 
+  NoAxes()
+``` 
+
+# Feature plot 
+
+## CD4/Foxp3
+``` {r, fig.width= 9, fig.height= 4}
+FeaturePlot(Arthritis.integration, features = c("FOXP3", "CD4"), pt.size = 0.2, ncol = 2)
+```
+
+# TSNE plot 
+
+``` {r, fig.width= 6, fig.height= 5}
+#RUN TSNE
+Arthritis.seurat.tsne<- RunTSNE(Arthritis.integration, 
+                                reduction = "harmony", dims = 1:40)
+
+#plot non-linear dimentionality reduction
+DimPlot(Arthritis.seurat.tsne, reduction = "tsne", label = TRUE) +
+  theme_void() +
+  NoLegend()
+``` 
+
+
+

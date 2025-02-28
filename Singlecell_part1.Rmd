@@ -1,0 +1,185 @@
+---
+title: "Recurrent Arthritis_single cells"
+date: "2023-11-08"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+# Objective
+
+1. Perform standard preprocessing steps
+2. Integration using Harmony
+3. Clustering and trick for fine-tune UMPA plots (finding best UMAP plots)
+
+# Load the required library 
+``` {r, warning= FALSE}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+```
+
+# Load individual data of each samples
+``` {r}
+#164S !
+A164S<- Read10X(data.dir = "164S")
+A164S2<- Read10X(data.dir = "164S2")
+
+#184S !
+A184S2<- Read10X(data.dir = "184S2")
+A184S3<- Read10X(data.dir = "184S3")
+
+#218S !
+A218S<- Read10X(data.dir = "218S")
+A218S2<- Read10X(data.dir = "218S2")
+
+#SA !
+ASA5<- Read10X(data.dir = "SA5")
+ASA6<- Read10X(data.dir = "SA6")
+ASA7<- Read10X(data.dir = "SA7")
+```
+
+# Create Seurat Object
+```{r}
+#164S !
+A164S<- CreateSeuratObject(counts = A164S, project = "164S", min.cells = 3, min.features = 200)
+
+#164S2 !
+A164S2<- CreateSeuratObject(counts = A164S2, project = "164S2", min.cells = 3, min.features = 200)
+
+#184S2 !
+A184S2<- CreateSeuratObject(counts = A184S2, project = "184S2", min.cells = 3, min.features = 200)
+
+#184S3 !
+A184S3<- CreateSeuratObject(counts = A184S3, project = "184S3", min.cells = 3, min.features = 200)
+
+#218S !
+A218S<- CreateSeuratObject(counts = A218S, project = "218S", min.cells = 3, min.features = 200)
+
+#A218S2 ! 
+A218S2<- CreateSeuratObject(counts = A218S2, project = "218S2", min.cells = 3, min.features = 200)
+
+#SA5 !
+ASA5<- CreateSeuratObject(counts = ASA5, project = "SA5", min.cells = 3, min.features = 200)
+
+#ASA6 !
+ASA6<- CreateSeuratObject(counts = ASA6, project = "SA6", min.cells = 3, min.features = 200)
+
+#SA7 !
+ASA7<- CreateSeuratObject(counts = ASA7, project = "SA7", min.cells = 3, min.features = 200)
+```
+
+# Adding type variable to seurat object
+``` {r}
+A164S$type= "First arthritis"  
+A184S2$type = "First arthritis" 
+A218S$type = "First arthritis"  
+A164S2$type= "Second arthritis"  
+A184S3$type = "Second arthritis" 
+A218S2$type = "Second arthritis" 
+ASA5$type = "Osteoarthritis"
+ASA6$type = "Osteoarthritis"
+ASA7$type = "Osteoarthritis"
+``` 
+
+# Merge Seurat Object and plot unfiltered cells
+``` {r, fig.width= 9, fig.height= 5}
+#merge objects
+Arthritis.merge<- merge(A164S, y=c(A164S2, A184S2, A184S3, A218S, A218S2, ASA5, ASA6, ASA7))
+
+#set percent MT
+Arthritis.merge<- PercentageFeatureSet(Arthritis.merge, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered<- VlnPlot(Arthritis.merge, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered
+```
+
+# Filter low quality cells
+``` {r, fig.width= 9, fig.height= 5}
+#Set the bar!
+Filtered.cells <- subset(Arthritis.merge, subset = nFeature_RNA >500 
+              & nFeature_RNA <5500 & nCount_RNA>800 & nCount_RNA <31000 & percent.mt < 10)
+
+#plot filtered cells!  
+VlnPlot(Filtered.cells, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+``` 
+
+## Number of cells left after filtering 
+
+``` {r}
+## extract meta data
+library(data.table)
+library(magrittr)
+cell_number <- Filtered.cells@meta.data %>% as.data.table
+cell<- cell_number[, .N, by = c("orig.ident")]
+cell
+```
+
+## Feature/feature relationship 
+
+``` {r, fig.width= 10, fig.height= 5}
+
+#nCount_RNA vs. percent.mt
+plot1 <- FeatureScatter(Filtered.cells, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+
+#nCount_RNA vs. nFeature_RNA
+plot2 <- FeatureScatter(Filtered.cells, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident") + theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+
+#plots
+plot1|plot2 
+```
+
+# Normalize cell using SCTransform
+
+``` {r}
+Arthritis<- SCTransform(Filtered.cells, vars.to.regress = "percent.mt", verbose= FALSE)
+``` 
+
+## Differentially expressed genes
+``` {r}
+deg <- FindVariableFeatures(Arthritis, selection.method = "vst", nfeatures = 2000) 
+top100<- head(VariableFeatures(deg), 100)
+top100
+```
+
+## Perform dimensionality reduction by PCA and plot PC components
+
+``` {r}
+#Run PCA
+Arthritis<- RunPCA(Arthritis, seed.use = 12345, verbose = FALSE)
+
+#Elbow plot
+ElbowPlot(Arthritis, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#save PCA.Ojbect
+saveRDS(Arthritis, file = "Arthritis_PCA.RDS")
+``` 
+
+## Heatmap of differentially expressed genes
+``` {r, fig.width= 8, fig.height= 5}
+DimHeatmap(Arthritis, dims = 1:3, cells = 500, balanced = TRUE)
+``` 
+
+
+``` {r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+

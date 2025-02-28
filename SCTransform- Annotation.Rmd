@@ -1,0 +1,1094 @@
+---
+title: "Single cell-- update"
+date: "2023-12-21"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+# Objective 
+Here, we aim to annotate the single cell clusters 
+
+``` {r, fig.width= 6, fig.height= 4}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+
+# load seurat object 
+seurat.obj<- readRDS("seurat.obj.final.rds")
+seurat.obj
+
+# dimplot 
+umap<- DimPlot(seurat.obj, reduction= "umap", label= TRUE, repel = FALSE) +
+  theme_minimal() +
+  NoLegend()
+umap
+``` 
+
+
+``` {r}
+ggsave("cluster_umap.tiff", plot = umap, height=4, width = 7, units = "in", dpi = 300)
+
+``` 
+
+**Feature plots** 
+
+``` {r, fig.width= 7, fig.height= 8}
+feat<- FeaturePlot(seurat.obj, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19" ), pt.size = 0.2,
+    ncol = 2)
+feat
+```
+
+``` {r}
+ggsave("features.tiff", plot = feat, height=6, width = 7, units = "in", dpi = 300)
+
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 11}
+feat1<- FeaturePlot(seurat.obj, features = c("EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "NCAM1", "S100A8", "S100A9", "CD8A", "CXCR3"), pt.size = 0.2,
+    ncol = 2)
+feat1
+```
+
+``` {r}
+ggsave("features_2.tiff", plot = feat1, height=8, width = 7, units = "in", dpi = 300)
+
+```
+
+**Stacked violen plot of cellular components**
+
+```  {r, fig.width= 6.5, fig.height= 5}
+features <- c("PTPRC", "CD3E", "CD3D", "CD4", "CD8A", "FOXP3", "SPARC", "CD68", "GNLY", "CD19", "NKG7"
+              , "CD1C", "S100A9", "S100A8", "FCGR3A", "CD14", "SDC1", "CD38", "CD27",
+                     "CX3CR1", "KLRG1", "IL7R", "CCR7", "TRDV2", "MKI67", "HLA-DRB1")
+
+#plot
+vio<- VlnPlot(seurat.obj, features = features, stack = TRUE, flip = TRUE) + 
+  theme(legend.position = "none") + 
+  RotatedAxis()
+
+ggsave("marker_violen.tiff", plot = vio, height=5, width = 6, units = "in", dpi = 300)
+``` 
+
+
+**Dotplot of cytokines** 
+``` {r, fig.width= 9, fig.height= 4}
+Idents(seurat.obj) <- factor(Idents(seurat.obj), levels = c("0", "1","2", "3", "4", "5", "6", "7",
+                                                                  "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"))
+genes <- c("CD3E", "CD3D", "CD4", "CD8A", "IFNG", "IL4", "IL10", "IL17A", "IL21", "TNF", "GZMB", "GZMM", "GZMH", 
+           "GZMK", "GNLY", "CSF2", "PRF1", "FOXP3")
+
+# plot dotplot
+dot.plot<- DotPlot(seurat.obj, features = genes, cols = c("blue", "red"), dot.scale = 5) +
+  theme_bw() + 
+  coord_flip() +
+  RotatedAxis() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=15), 
+        axis.title= element_text(size = 14, face = "bold"), 
+        axis.text = element_text(size=10, face = "bold"), 
+        axis.text.x = element_text()) + labs(y= "Cluster Identity")
+
+ggsave("dot.plot_cytokines.tiff", plot = dot.plot, height=4, width = 8, units = "in", dpi = 300)
+``` 
+
+**Determination of major cell types and cell states** 
+We determined the major immune cell subsets using a similar approach as previously described80,81. First, differentially expressed genes (DEGs) of each cluster were identified using the FindMarkers function in Seurat. We carefully reviewed top 50 DEGs for each clusters with special focus on well-studied canonical markers including **CD3D/CD3E (T cells)**, **CD3D/CD3E/TCF7 (naïve T cells)**, **CD3D/CD3E/CD4 (CD4+ T cells)**, **CD3D/CD3E/CD8A/CD8B (CD8+ T cells)**, **CD3D/CD3E/CD8A/CD8B/KLRG1 (effector CD8+ T cells)**, **CD3D/CD3E/TRDC/TRDV (γδ T cells)**, **NCAM in the absence of CD3D/CD3E (NK cells)**, **CD3D/CD3E/NCAM (NK T cells)**, **CD19 (B cells)**, **CD19/CD27/CD38/SDC1 (plasmablasts)**, **CD14 (monocytes/macrophages)**, **FCGR3A (neutrophils)**, **CD1c/HLA-DR (dendritic cells)**, and **PPBP (megakaryocytes)**. Multiple layers of information including the cluster distribution, cluster specific genes in particularly the top 50 DEGs, canonical cell lineage markers were integrated and carefully reviewed to define cell types and cell transcriptomic states.
+
+# Differentially expressed genes of each cluster 
+References: vignettes: https://satijalab.org/seurat/articles/sctransform_v2_vignette.html#identify-differential-expressed-genes-across-conditions-1
+
+For a (much!) faster implementation of the Wilcoxon Rank Sum Test,
+(default method for FindMarkers), please install the presto package
+
+``` {r}
+install.packages('devtools')
+library(devtools)
+devtools::install_github('immunogenomics/presto')
+``` 
+
+
+**create director to save deg of all cluster**
+
+``` {r}
+file.path<- "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis"
+dir.create("deg.sct")
+``` 
+
+**find deg of cluster 0**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+prepsct<- PrepSCTFindMarkers(seurat.obj)
+cluster0<- FindMarkers(prepsct,assay = "SCT", ident.1 = 0, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE)
+head(cluster0, n = 20)
+``` 
+
+**order it from highest log2FC to lowest
+``` {r}
+cluster0<- cluster0 %>% arrange(desc(avg_log2FC))
+head(cluster0)
+``` 
+
+Save deg of cluster 0
+
+``` {r}
+write.csv(cluster0, file = "deg.sct/deg_sct_cluster0.csv")
+```
+
+**find deg of cluster 1**
+
+``` {r}
+compare gene expression of cluster 0 to the rest of the cluster
+cluster1<- FindMarkers(prepsct,assay = "SCT", ident.1 = 1, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster1, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster1<- cluster1 %>% arrange(desc(avg_log2FC))
+write.csv(cluster1, file = "deg.sct/deg_sct_cluster1.csv")
+```
+
+
+**find deg of cluster 2**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster2<- FindMarkers(prepsct,assay = "SCT", ident.1 = 2, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster2, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster2<- cluster2 %>% arrange(desc(avg_log2FC))
+write.csv(cluster2, file = "deg.sct/deg_sct_cluster2.csv")
+```
+
+**find deg of cluster 3**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster3<- FindMarkers(prepsct,assay = "SCT", ident.1 = 3, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster3, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster3<- cluster3 %>% arrange(desc(avg_log2FC))
+write.csv(cluster3, file = "deg.sct/deg_sct_cluster3.csv")
+```
+
+**find deg of cluster 4**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster4<- FindMarkers(prepsct,assay = "SCT", ident.1 = 4, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster4, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster4<- cluster4 %>% arrange(desc(avg_log2FC))
+write.csv(cluster4, file = "deg.sct/deg_sct_cluster4.csv")
+```
+
+**find deg of cluster 5**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster5<- FindMarkers(prepsct,assay = "SCT", ident.1 = 5, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster5, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster5<- cluster5 %>% arrange(desc(avg_log2FC))
+write.csv(cluster5, file = "deg.sct/deg_sct_cluster5.csv")
+```
+
+**find deg of cluster 6**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster6<- FindMarkers(prepsct,assay = "SCT", ident.1 = 6, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster6, n = 20)
+``` 
+
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster6<- cluster6 %>% arrange(desc(avg_log2FC))
+write.csv(cluster6, file = "deg.sct/deg_sct_cluster6.csv")
+```
+
+**find deg of cluster 7**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster7<- FindMarkers(prepsct, assay = "SCT", ident.1 = 7, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster7, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster7<- cluster7 %>% arrange(desc(avg_log2FC))
+write.csv(cluster7, file = "deg.sct/deg_sct_cluster7.csv")
+```
+
+**find deg of cluster 8**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster8<- FindMarkers(prepsct, assay = "SCT", ident.1 = 8, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster8, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster8<- cluster8 %>% arrange(desc(avg_log2FC))
+write.csv(cluster8, file = "deg.sct/deg_sct_cluster8.csv")
+```
+
+**find deg of cluster 9**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster9<- FindMarkers(prepsct, assay = "SCT", ident.1 = 9, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster9, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster9<- cluster9 %>% arrange(desc(avg_log2FC))
+write.csv(cluster9, file = "deg.sct/deg_sct_cluster9.csv")
+```
+
+**find deg of cluster 10**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster10<- FindMarkers(prepsct, assay = "SCT", ident.1 = 10, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster10, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster10<- cluster10 %>% arrange(desc(avg_log2FC))
+write.csv(cluster10, file = "deg.sct/deg_sct_cluster10.csv")
+```
+
+**find deg of cluster 11**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster11<- FindMarkers(prepsct, assay = "SCT", ident.1 = 11, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster11, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster11<- cluster11 %>% arrange(desc(avg_log2FC))
+write.csv(cluster11, file = "deg.sct/deg_sct_cluster11.csv")
+```
+
+**find deg of cluster 12**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster12<- FindMarkers(prepsct, assay = "SCT", ident.1 = 12, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster12, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster12<- cluster12 %>% arrange(desc(avg_log2FC))
+write.csv(cluster12, file = "deg.sct/deg_sct_cluster12.csv")
+```
+
+**find deg of cluster 13**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster13<- FindMarkers(prepsct, assay = "SCT", ident.1 = 13, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster13, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster13<- cluster13 %>% arrange(desc(avg_log2FC))
+write.csv(cluster13, file = "deg.sct/deg_sct_cluster13.csv")
+```
+
+**find deg of cluster 14**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster14<- FindMarkers(prepsct, assay = "SCT", ident.1 = 14, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster14, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster14<- cluster14 %>% arrange(desc(avg_log2FC))
+write.csv(cluster14, file = "deg.sct/deg_sct_cluster14.csv")
+``` 
+
+**find deg of cluster 15**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster15<- FindMarkers(prepsct, assay = "SCT", ident.1 = 15, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster15, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster15<- cluster15 %>% arrange(desc(avg_log2FC))
+write.csv(cluster15, file = "deg.sct/deg_sct_cluster15.csv")
+``` 
+
+**find deg of cluster 16**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster16<- FindMarkers(prepsct, assay = "SCT", ident.1 = 16, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster16, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster16<- cluster16 %>% arrange(desc(avg_log2FC)) 
+write.csv(cluster16, file = "deg.sct/deg_sct_cluster16.csv")
+``` 
+
+**find deg of cluster 17**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster17<- FindMarkers(prepsct, assay = "SCT", ident.1 = 17, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster17, n = 20)
+``` 
+
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster17<- cluster17 %>% arrange(desc(avg_log2FC))
+write.csv(cluster17, file = "deg.sct/deg_sct_cluster17.csv")
+``` 
+
+**find deg of cluster 18**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster18<- FindMarkers(prepsct, assay = "SCT", ident.1 = 18, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster18, n = 20)
+``` 
+
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster18<- cluster18 %>% arrange(desc(avg_log2FC))
+write.csv(cluster18, file = "deg.sct/deg_sct_cluster18.csv")
+``` 
+
+**find deg of cluster 19**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster19<- FindMarkers(prepsct, assay = "SCT", ident.1 = 19, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster19, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster19<- cluster19 %>% arrange(desc(avg_log2FC))
+write.csv(cluster19, file = "deg.sct/deg_sct_cluster19.csv")
+``` 
+
+**find deg of cluster 20**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster20<- FindMarkers(prepsct, assay = "SCT", ident.1 = 20, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster20, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster20<- cluster20 %>% arrange(desc(avg_log2FC))
+write.csv(cluster20, file = "deg.sct/deg_sct_cluster20.csv")
+``` 
+
+# Annotation 
+
+``` {r}
+DimPlot(seurat.obj, reduction= "umap", label = TRUE, repel = FALSE) +
+  theme_minimal() +
+  NoLegend()
+
+#save plot image 
+#ggsave("umap.unannotate.tiff", plot = plot, height=6, width = 10, units = "in", dpi = 300)
+``` 
+
+# new annotation label! 
+```{r}
+seurat.obj.annota <- RenameIdents(seurat.obj, `0` ="CD4 Tcm", `1` ="Classical Mono",
+                              `2` ="Effector CD8", `3` ="gdT", `4`= "Treg", `5`= "Non-inflammatory DC", 
+                              `6`= "SPP1+ Macrophages", `7`= "NKT", `8`= "NK",
+                              `9`= "PD1hi CXCL13hi CD4", `10`= "Non-classical mono", `11`="Activated CD4", `12`= "Trm effector CD8", `13`= "MAIT", 
+                              `14`= "cycling T", `15`= "Neutrophil", `16`="CLEC9A+ DCs", `17`="pDC", `18`= "Synovial cells", `19`= "B cell", `20`="mDC")
+
+#dimplot 
+DimPlot(seurat.obj.annota, reduction = "umap", label= TRUE, label.size = 3.5) +
+  theme_minimal() +
+  NoLegend()
+
+# save annotation object
+saveRDS(seurat.obj.annota, file = "seurat.obj.annotate.RDSRDS")
+
+#save plot image 
+ggsave("umap.annotate.tiff", plot = plot, height=6, width = 10, units = "in", dpi = 300)
+```
+
+# stacked violen plot of annotated cluster 
+marker expression of T cell subsets
+
+``` {r, fig.width= 8, fig.height= 6}
+features <- c("CD3E","CD3D", "CD4", "CD8A", "FOXP3", "CCR7", "CD69", "CXCR3", "CXCR5", "CXCR6", "CCR4", "CCR6", "KLRB1", "IL2RA", "IL7R", "KLRG1", "CXCL13", "TOX", "LAG3", "CTLA4", "PDCD1", "HAVCR2", "TIGIT", "EOMES", "CX3CR1", "MKI67", "TRGV9", 
+              "TRGV2", "FCGR3A", "NCAM1")
+
+#plot
+VlnPlot(seurat.obj.annota, features = features, stack = TRUE, flip = TRUE, adjust = 0.5) &
+  theme(legend.position = "none",
+        axis.text.x =  element_blank()) + 
+  RotatedAxis() 
+
+
+#save plot image 
+#ggsave("stacked_violen_markers.png", plot = plot, height=6, width = 10, units = "in", dpi = 300)
+``` 
+
+# cytokine expression  
+
+``` {r, fig.width= 9, fig.height= 5.5}
+Idents(seurat.obj.annota) <- factor(Idents(seurat.obj.annota), 
+                                    levels = c("CD4 CTM", "mono/macrophage","Effector CD8", "ILC", "Treg", "CD1C", 
+                              "Neutrophil", "NK T", "NK", "CXCL13hi TPH", "Monocyte", "naive CD4", "TRM CD8", "MAIT", 
+                              "cycling T", "Macrophage", "CDC2", "pDC", "mDC","B cell", "mDC."))
+#gene names 
+genes <- c("CD3E", "CD3D", "CD4", "CD8A", "IFNG", "IL4", "IL10", "IL17A", "IL21", "TNF", "GZMB", "GZMM", "GZMH", 
+           "GZMK", "GNLY", "CSF2", "PRF1", "FOXP3")
+#plot 
+DotPlot(seurat.obj.annota, features = genes, cols = c("blue", "red"), dot.scale = 8) +
+  theme_bw() + 
+  coord_flip() +
+  RotatedAxis() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=15), 
+        axis.title= element_text(size = 14, face = "bold"), 
+        axis.text = element_text(size=13, face = "bold"), 
+        axis.text.x = element_text(angle = 90))
+
+#ggsave("dot.plot.cytokines.tiff", plot = plot, height=6, width = 10, units = "in", dpi = 300)
+``` 
+
+# feature expression plot 
+``` {r, fig.height= 5, fig.width= 10, warning= FALSE}
+cytokines<- c("IL17A", "IL10", "IL4", "TNF", "IFNG", "CSF2")
+RidgePlot(seurat.obj.annota, features = "TNF", ncol = 2) + 
+  NoLegend()
+``` 
+
+``` {r, fig.width= 14, fig.height= 10}
+VlnPlot(seurat.obj.annota, features = cytokines)
+``` 
+
+# Calculate cluster the proportion 
+
+**Visualize All the three groups in UMAP**
+``` {r,  fig.width= 6, fig.height= 4}
+DimPlot(seurat.obj, reduction = "umap", group.by = "type") + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "bottom")
+```
+
+**Visualize All the three groups in UMAP**
+``` {r,  fig.width= 8, fig.height= 4}
+DimPlot(seurat.obj, reduction = "umap", split.by = "type") + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  NoLegend()
+```
+
+``` {r}
+#view seurat obj
+view(seurat.obj.annota)
+
+#set file path and create directory 
+figurePath <- file.path("Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis")
+if(!dir.exists(figurePath)){
+    dir.create("cluster_frequency", recursive = T)
+}
+
+#set working directory if needed!
+setwd(figurePath)
+
+# patient 164S
+p.164s <- subset(seurat.obj.annota, subset = orig.ident == "164S")
+view(p.164s)
+
+# cluster_frequency
+cluster_frequency.164s <- p.164s@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.164s")
+
+#write csv file to save the result
+write.csv(cluster_frequency.164s, file="cluster_frequency/cluster_frequency.164S.CSV")
+
+
+# patient 164S2
+p.164S2 <- subset(seurat.obj.annota, subset = orig.ident == "164S2")
+view(p.164S2)
+
+# cluster_frequency
+cluster_frequency.164S2 <- p.164S2@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.164S2")
+
+write csv file to save the result
+write.csv(cluster_frequency.164S2, file="cluster_frequency/cluster_frequency.164S2.CSV")
+
+
+# patient 164S2
+p.184S2 <- subset(seurat.obj.annota, subset = orig.ident == "184S2")
+view(p.184S2)
+
+# cluster_frequency
+cluster_frequency.184S2 <- p.184S2@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.184S2")
+
+write csv file to save the result
+write.csv(cluster_frequency.184S2, file="cluster_frequency/cluster_frequency.184S2.CSV")
+
+# patient 164S2
+p.184S3 <- subset(seurat.obj.annota, subset = orig.ident == "184S3")
+view(p.184S3)
+
+# cluster_frequency
+cluster_frequency.184S3 <- p.184S3@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.184S3")
+
+write csv file to save the result
+write.csv(cluster_frequency.184S3, file="cluster_frequency/cluster_frequency.184S3.CSV")
+
+
+# patient 164S2
+p.218S <- subset(seurat.obj.annota, subset = orig.ident == "218S")
+view(p.218S)
+
+# cluster_frequency
+cluster_frequency.218S <- p.218S@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.218S")
+
+write csv file to save the result
+write.csv(cluster_frequency.218S, file="cluster_frequency/cluster_frequency.218S.CSV")
+
+ patient 164S2
+p.218S2 <- subset(seurat.obj.annota, subset = orig.ident == "218S2")
+view(p.218S2)
+
+# cluster_frequency
+cluster_frequency.218S2 <- p.218S2@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.218S2")
+
+write csv file to save the result
+write.csv(cluster_frequency.218S2, file="cluster_frequency/cluster_frequency.218S2.CSV")
+
+
+# patient SA5
+p.SA5 <- subset(seurat.obj.annota, subset = orig.ident == "SA5")
+view(p.SA5)
+
+# cluster_frequency
+cluster_frequency.SA5 <- p.SA5@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.SA5")
+
+write csv file to save the result
+write.csv(cluster_frequency.SA5, file="cluster_frequency/cluster_frequency.SA5.CSV")
+
+# patient SA6
+p.SA6 <- subset(seurat.obj.annota, subset = orig.ident == "SA6")
+view(p.SA6)
+
+# cluster_frequency
+cluster_frequency.SA6 <- p.SA6@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.SA6")
+
+write csv file to save the result
+write.csv(cluster_frequency.SA6, file="cluster_frequency/cluster_frequency.SA6.CSV")
+
+# patient SA7
+p.SA7 <- subset(seurat.obj.annota, subset = orig.ident == "SA7")
+view(p.SA7)
+
+# cluster_frequency
+cluster_frequency.SA7 <- p.SA7@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(count=n()) %>%
+  mutate(relative_frequency = count*100/sum(count)) %>%
+  mutate(data_set = "p.SA7")
+
+write csv file to save the result
+write.csv(cluster_frequency.SA7, file="cluster_frequency/cluster_frequency.SA7.CSV")
+``` 
+
+#plot cluster frequency 
+``` {r}
+#read csv file back in 
+proportion<- read.csv("cluster_frequency/cluster_frequency.csv", stringsAsFactors = TRUE)
+proportion
+``` 
+
+## cluster proportion
+``` {r}
+CD4.ctm<- proportion %>% filter(cluster_name == "CD4 central memory")
+CD4.ctm$type<- factor(CD4.ctm$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p1<- ggplot(CD4.ctm, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% CD4 TCM of CD45", title = "CD4 TCM")
+p1
+``` 
+
+
+``` {r}
+CD4.naive<- proportion %>% filter(cluster_name == "Naive CD4")
+CD4.naive$type<- factor(CD4.naive$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p2<- ggplot(CD4.naive, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% Naive CD4 of CD45", title = "Naive CD4")
+p2
+``` 
+
+``` {r}
+TPH<- proportion %>% filter(cluster_name == "CXCL13hi TPH")
+TPH$type<- factor(TPH$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p3<- ggplot(TPH, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% CXCL13hi TPH of CD45", title = "CXCL13hi TPH")
+p3
+``` 
+
+``` {r}
+MAIT<- proportion %>% filter(cluster_name == "MAIT")
+MAIT$type<- factor(MAIT$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p4<- ggplot(MAIT, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% MAIT of CD45", title = "MAIT")
+p4
+``` 
+``` {r}
+Treg<- proportion %>% filter(cluster_name == "Treg")
+Treg$type<- factor(Treg$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p5<- ggplot(Treg, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% Treg of CD45", title = "Treg")
+p5
+``` 
+``` {r}
+effector.cd8<- proportion %>% filter(cluster_name == "Effector CD8")
+effector.cd8$type<- factor(effector.cd8$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p6<- ggplot(effector.cd8, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% effector CD8 of CD45", title = "Effector CD8")
+p6
+``` 
+``` {r}
+TRM.cd8<- proportion %>% filter(cluster_name == "TRM CD8")
+TRM.cd8$type<- factor(TRM.cd8$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p7<- ggplot(TRM.cd8, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% TRM CD8 of CD45", title = "TRM CD8")
+p7
+```
+
+``` {r}
+cyclingT<- proportion %>% filter(cluster_name == "cycling T")
+cyclingT$type<- factor(cyclingT$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p8<- ggplot(cyclingT, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% cycling T of CD45", title = "Cycling T")
+p8
+```
+``` {r}
+NKT<- proportion %>% filter(cluster_name == "NKT")
+NKT$type<- factor(NKT$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p9<- ggplot(NKT, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% NK T of CD45", title = "NK T cell")
+p9
+```
+
+``` {r}
+ILC<- proportion %>% filter(cluster_name == "ILC")
+ILC$type<- factor(ILC$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p10<- ggplot(ILC, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_blank(), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% ILC of CD45", title = "ILC")
+p10
+```
+``` {r}
+Nk<- proportion %>% filter(cluster_name == "NK")
+Nk$type<- factor(Nk$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p11<- ggplot(Nk, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% NK of CD45", title = "NK cell")
+p11
+```
+``` {r}
+Bcell<- proportion %>% filter(cluster_name == "B cell")
+Bcell$type<- factor(Bcell$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p12<- ggplot(Bcell, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% B cell of CD45", title = "B cell")
+p12
+```
+``` {r}
+mono.macro<- proportion %>% filter(cluster_name == "mono/macro")
+mono.macro$type<- factor(mono.macro$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p13<- ggplot(mono.macro, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% mono/macro of CD45", title = "mono/macroph")
+p13
+```
+``` {r}
+neutro<- proportion %>% filter(cluster_name == "Neutrophil")
+neutro$type<- factor(neutro$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p14<- ggplot(neutro, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% neutrophil of CD45", title = "Neutrophil")
+p14
+```
+``` {r}
+macrophage<- proportion %>% filter(cluster_name == "Macrophage")
+macrophage$type<- factor(macrophage$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+
+#visualization ! 
+p15<- ggplot(macrophage, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% Macrophage of CD45", title = "macrophage")
+p15
+```
+
+``` {r}
+monocyte<- proportion %>% filter(cluster_name == "Inter-monocyte")
+monocyte$type<- factor(monocyte$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+#visualization ! 
+p16<- ggplot(monocyte, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% monocyte of CD45", title = "Monocyte")
+p16
+```
+
+``` {r}
+CD1C<- proportion %>% filter(cluster_name == "CD1C")
+CD1C$type<- factor(CD1C$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+#visualization ! 
+p17<- ggplot(CD1C, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% CD1C of CD45", title = "CD1C")
+p17
+```
+
+
+
+``` {r}
+CDC2<- proportion %>% filter(cluster_name == "CDC2")
+CDC2$type<- factor(CDC2$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+#visualization ! 
+p18<- ggplot(CDC2, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% CDC2 of CD45", title = "CDC2")
+p18
+```
+
+``` {r}
+mdC<- proportion %>% filter(cluster_name == "mDC")
+mdC$type<- factor(mdC$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+#visualization ! 
+p19<- ggplot(mdC, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% mDC of CD45", title = "mDC")
+p19
+```
+``` {r}
+pDC<- proportion %>% filter(cluster_name == "pDC")
+pDC$type<- factor(pDC$type, levels = c("first arthritis", "second arthritis", "osteoarthritis"))
+
+#visualization ! 
+p20<- ggplot(pDC, aes(x= type, y= frequency, fill= type)) +
+  theme_classic() +
+  geom_boxplot(size= 0.5) +
+  geom_jitter(size= 3) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14
+  ), axis.title.y = element_text(size = 13, face = "bold"), 
+  axis.title.x = element_blank(),
+  axis.text = element_text(size=10, face = "bold"), 
+  axis.text.x = element_text(angle = 50, vjust = 1, hjust = 1), 
+  legend.position = "none") + 
+  labs(x= "Groups", y= "% pDC of CD45", title = "pDC")
+
+
+p20
+```
+
+``` {r}
+#library(patchwork)
+proportion<- (p1|p2|p3|p4|p5|p6|p7|p8|p9|p10)/(p11|p12|p13|p14|p15|p16|p17|p18|p19|p20)
+ggsave("immune_fraction.tiff", plot = proportion, height=7, width = 18, units = "in", dpi = 300)
+
+``` 
+
+
+``` {r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

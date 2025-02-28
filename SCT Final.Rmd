@@ -1,0 +1,80 @@
+---
+title: "SCT_Final"
+output: html_document
+date: "2023-12-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# load singlet object
+
+``` {r}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+p_164S<- readRDS("Singlet164S_v5.RDS")
+p_164S2<- readRDS("Singlet.164S2_v5.RDS")
+p_184S2<- readRDS("Singlet.184S2_v5.RDS")
+p_184S3<- readRDS("Singlet.184S3_v5.RDS")
+p_218S<- readRDS("Singlet.218S_v5.RDS")
+p_218S2<- readRDS("Singlet.218S2_v5.RDS")
+p_SA5<- readRDS("Singlet.SA5_v5.RDS")
+p_SA6<- readRDS("Singlet.SA6_v5.RDS")
+p_SA7<- readRDS("Singlet.SA7_v5.RDS")
+```
+
+``` {r}
+#merge objects
+Singlet<- merge(p_164S, y=c(p_164S2, p_184S2, p_184S3, p_218S, p_218S2, p_SA5, p_SA6, p_SA7))
+rm(p_164S, p_164S2, p_184S2, p_184S3, p_218S, p_218S2, p_SA5, p_SA6, p_SA7)
+Singlet_features<- Singlet[c(1, 2, 3),]
+view(Singlet)
+
+#plot unfiltered data 
+VlnPlot(Singlet, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+
+# Feature and feature relationship 
+
+``` {r}
+plot1 <- FeatureScatter(Singlet, feature1 = "nCount_RNA", feature2 = "percent.mt") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+plot2 <- FeatureScatter(Singlet, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+plot1|plot2 
+``` 
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+memory.limit(30000)
+Arthritis.merge.flt <- Singlet[!grepl("MALAT1", rownames(Singlet)), ]
+
+# Filter Mitocondria
+Arthritis.merge.flt <- Singlet[!grepl("^MT-", rownames(Singlet)), ]
+
+#Mitochondria
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MT\\.", rownames(Arthritis.merge.flt)), ]
+
+#Filter gene LOC
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^LOC(0-9)", rownames(Arthritis.merge.flt)), ]
+
+# Filter Ribossomal gene 
+Arthritis.merge.flt <- Arthritis.merge.flt[ ! grepl('^RP[SL]', rownames(Arthritis.merge.flt)), ]
+
+# HSPA
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^HSPA", rownames(Arthritis.merge.flt)), ]
+
+# MTRNR
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MTRNR", rownames(Arthritis.merge.flt)), ]
+
+# TR pattern
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^TR(A|B|G|D)V", rownames(Arthritis.merge.flt)), ]
+```  
+
+
+``` 
+

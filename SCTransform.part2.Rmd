@@ -1,0 +1,231 @@
+---
+title: "SCTransform_part2"
+output: html_document
+date: "2023-11-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Integration using harmony
+``` {r}
+library(harmony)
+set.seed(12345)
+Arthritis<- RunHarmony(Arthritis ,group.by.vars = "orig.ident")
+```
+
+# Find Neighbors and clusters
+``` {r, fig.width= 8, fig.height= 10}
+set.seed(12345)
+Arthritis<- FindNeighbors(Arthritis, reduction = "harmony", dims = 1:30, verbose = FALSE)
+
+#run resolution between 0 and 1
+resolution_values <- seq(0, 1, by = 0.1)
+Arthritis.clustree<- FindClusters(Arthritis, resolution = resolution_values, random.seed = 12345, verbose = FALSE)
+``` 
+
+# examine cluster tree to deterine the optimal resolution 
+
+``` {r, fig.width= 8, fig.height= 9}
+library(clustree)
+clustree(Arthritis.clustree)
+```
+# Save cluster tree object
+
+``` {r}
+saveRDS(Arthritis, file ="Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/Cluster.tree.RDS")
+``` 
+
+# Investigate various min.dist value of RunUMAP function
+``` {r}
+# Determine the min.dist values you want to test
+min_dist_values <- c(0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01, 0.005, 0.001)  
+
+# Create a list to store the plots
+plot_list <- list()
+
+for(dist in min_dist_values){
+    Arthritis <- RunUMAP(object = Arthritis ,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = dist)
+
+    Arthritis <- FindNeighbors(object = Arthritis, reduction="harmony", dims = 1:30)
+    snn.obj <- FindClusters(object = Arthritis, resolution = 0.2, random.seed = 12345)
+    
+    umap_plot <- DimPlot(snn.obj, reduction="umap", ncol=2, group.by = "seurat_clusters") +
+      ggtitle(paste("UMAP Plot (min.dist =", dist, ")"))
+    
+    # Append the plot to the list
+    plot_list[[as.character(dist)]] <- umap_plot
+}
+```
+
+# Combine all plots into a single figure.
+``` {r}
+library(ggplot2)
+library(gridExtra)
+
+# Calculate the number of rows and columns for the grid
+total_plots <- length(min_dist_values)
+n_rows <- ceiling(sqrt(total_plots))
+n_cols <- ceiling(total_plots / n_rows)
+
+# Combine all plots into a flexible grid
+combined_plot <- do.call(grid.arrange, c(plot_list, ncol = n_cols, nrow = n_rows))
+
+# Save the combined plot
+ggsave("combined_min_dist_plots.png", combined_plot, height=18, width=20)
+``` 
+
+# Or Save individual plot of min.dist separately  
+``` {r}
+# Create a directory to save the plots 
+dir.create("min_dist_plots", showWarnings = FALSE)
+
+#iterate through various min.dist values
+for(dist in c(0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01, 0.005, 0.001)){
+    Arthritis.dist <- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = dist)
+
+    Arthritis.dist <- FindNeighbors(object = Arthritis.dist, reduction="harmony", dims = 1:30)
+    snn.obj <- FindClusters(object = Arthritis.dist, resolution = 0.2)
+    
+    umap_plot <- DimPlot(snn.obj, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE) +
+      NoLegend() +
+      ggtitle(paste("UMAP Plot (min.dist =", dist, ")"))
+    
+    
+    #Save the plot
+    plot_filename <- paste0("min_dist_plots/UMAP_min_dist_", dist, ".png")
+    ggsave(filename = plot_filename, plot = umap_plot, height=4, width=7, dpi=300)
+}
+``` 
+
+# Examine various resolution values
+``` {r}
+# Create a directory to save the plots 
+dir.create("Resolution_plots", showWarnings = FALSE)
+# Run UMAP
+Arthritis.res<- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.01)
+Arthritis.res <- FindNeighbors(object =  Arthritis.res, reduction="harmony", dims = 1:30)
+
+#iterate through various value of resolutions 
+for(res in c(0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)){
+    snn.obj.res <- FindClusters(object = Arthritis.res, resolution = res, random.seed = 12345, verbose = FALSE)
+    
+    umap_plot_res <- DimPlot(snn.obj.res, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE) +
+      NoLegend() +
+      ggtitle(paste("UMAP Plot (resolution =", res, ")"))
+    
+    #Save the plot
+    plot_filename_res <- paste0("Resolution_plots/UMAP_resoltuion_", res, ".png")
+    ggsave(filename = plot_filename_res, plot = umap_plot_res, height=4, width=7, dpi=300)
+    
+}
+``` 
+
+# Testing various value of spread of RunUMAP function
+
+``` {r}
+# Create a directory to save the plots 
+dir.create("spread_plots", showWarnings = FALSE)
+
+#iterate through various min.dist values
+for(spr in c(0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4)){
+    Arthritis.spr <- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.01, spread = spr)
+
+    Arthritis.spr <- FindNeighbors(object = Arthritis.spr, reduction="harmony", dims = 1:30)
+    snn.obj.spr <- FindClusters(object = Arthritis.spr, resolution = 0.6)
+    
+    umap_plot_spr <- DimPlot(snn.obj.spr, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE) +
+      NoLegend() +
+      ggtitle(paste("UMAP Plot (spread =", spr, ")"))
+    
+    
+    #Save the plot
+    plot_filename_spr <- paste0("spread_plots/UMAP_spread_", spr, ".png")
+    ggsave(filename = plot_filename_spr, plot = umap_plot_spr, height=4, width=7, dpi=300)
+}
+``` 
+
+
+# Findning optimal number of n.neighbor of RunUMAP
+
+``` {r}
+# Create a directory to save the plots 
+dir.create("neighbors_plots", showWarnings = FALSE)
+
+#iterate through various min.dist values
+for(neigh in c(5, 10, 15, 20, 25, 30, 35, 40, 45, 50)){
+    Arthritis.neigh <- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.1, spread = 3.5, n.neighbors = neigh)
+
+    Arthritis.neigh  <- FindNeighbors(object = Arthritis.neigh , reduction="harmony", dims = 1:30)
+    snn.obj.neigh <- FindClusters(object = Arthritis.neigh, resolution = 0.6, random.seed = 12345)
+    
+    umap_plot_neigh <- DimPlot(snn.obj.neigh, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE) +
+      NoLegend() +
+      ggtitle(paste("UMAP Plot (n.neighbors =", neigh, ")"))
+    
+    
+    #Save the plot
+    plot_filename_neigh <- paste0("neighbors_plots/neighbor", neigh, ".png")
+    ggsave(filename = plot_filename_neigh , plot = umap_plot_neigh, height=4, width=7, dpi=300)
+}
+``` 
+
+# Run single UMAP using optimal value found in previous section. 
+``` {r}
+#read normalize files back in 
+Arthritis.singleparam<- readRDS("SCTranform.RDS")
+
+#Run PCA
+Arthritis.singleparam<- RunPCA(Arthritis.singleparam,seed.use = 12345, verbose = FALSE)
+
+#Elbow plot
+ElbowPlot(Arthritis.singleparam, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#Run single UMAP with optimal parameter!
+
+``` {r, fig.width= 5, fig.height= 5}
+library(harmony)
+set.seed(12345)
+
+#integration
+UMAP.singlparam<- RunHarmony(Arthritis.singleparam ,group.by.vars = "orig.ident")
+
+#RUNUMAP pipeline 
+UMAP.singlparam<- RunUMAP(object = UMAP.singlparam,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.2, spread = 3, n.neighbors = 30)
+UMAP.singlparam<- FindNeighbors(UMAP.singlparam, reduction = "harmony", dims = 1:30, verbose = FALSE)
+UMAP.singlparam<- FindClusters(UMAP.singlparam, resolution = 0.6, random.seed = 12345)
+
+#plot umap 
+DimPlot(UMAP.singlparam) +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+
+
+
+
+

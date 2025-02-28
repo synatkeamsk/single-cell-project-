@@ -1,0 +1,187 @@
+---
+title: "Arthritis single cell-- Clustering"
+date: "2023-11-08"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+# Load library 
+``` {r, results='hide'}
+library(tidyverse)
+library(Seurat)
+library(harmony)
+set.seed(12345)
+```
+
+# Objective
+
+This section will focus on how to fine-tune UMAP plot. 
+
+
+# Integration using harmony
+
+``` {r, results='hide'}
+#read the PCA object back
+Arthritis<- readRDS("Arthritis_PCA.RDS")
+Arthritis<- RunHarmony(Arthritis ,group.by.vars = "orig.ident")
+```
+
+# Find Neighbors and clusters
+
+``` {r, fig.width= 8, fig.height= 10, results='hide'}
+set.seed(12345)
+Arthritis.clustree<- FindNeighbors(Arthritis, reduction = "harmony", dims = 1:30, verbose = FALSE)
+
+#run resolution between 0 and 1
+resolution_values <- seq(0, 1, by = 0.1)
+Arthritis.clustree<- FindClusters(Arthritis.clustree, resolution = resolution_values, random.seed = 12345, verbose = FALSE)
+``` 
+
+# Examine cluster tree to deterine the optimal resolution 
+
+``` {r, fig.width= 8, fig.height= 9}
+library(clustree)
+clustree(Arthritis.clustree)
+```
+
+# Investigate various min.dist value of RunUMAP function
+
+``` {r, results='hide'}
+# Determine the optimal min.dist values 
+min_dist_values <- c(0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01, 0.005, 0.001)  
+
+# Create a list to store the plots
+plot_list <- list()
+
+#Iterate through all these min.dist values
+for(dist in min_dist_values){
+    Arthritis.min.dist <- RunUMAP(object = Arthritis ,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = dist)
+
+    Arthritis.min.dist <- FindNeighbors(object = Arthritis.min.dist, reduction="harmony", dims = 1:30)
+    snn.obj.min.dist <- FindClusters(object = Arthritis.min.dist, resolution = 0.2, random.seed = 12345)
+    
+    umap_plot.min.dist <- DimPlot(snn.obj.min.dist, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE, label.size = 3) +
+      ggtitle(paste("(min.dist =", dist, ")")) + NoLegend()
+    
+    # Append the plot to the list
+    plot_list[[as.character(dist)]] <- umap_plot.min.dist
+}
+```
+
+
+# Combine all plots into a single figure.
+``` {r,fig.width= 12, fig.height=15}
+library(ggplot2)
+library(gridExtra)
+
+# Calculate the number of rows and columns for the grid
+total_plots.dist <- length(min_dist_values)
+n_rows.dist <- ceiling(sqrt(total_plots.dist))
+n_cols.dist <- ceiling(total_plots.dist / n_rows.dist)
+
+# Combine all plots into a flexible grid
+combined_plot.dist <- do.call(grid.arrange, c(plot_list, ncol = n_cols.dist, nrow = n_rows.dist))
+```
+
+## Save the combined plot
+``` {r}
+ggsave("combined_min_dist_plots.png", combined_plot.dist, height=18, width=20)
+``` 
+
+Comments: I have saved all these min.dist plots and can be viewed outside Rmarkdown. 
+
+
+# Examine various resolution values
+
+``` {r, results='hide'}
+# Create a list to store the plots
+plot_list_resolution <- list()
+
+# Run UMAP
+Arthritis.res<- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.05)
+Arthritis.res <- FindNeighbors(object =  Arthritis.res, reduction="harmony", dims = 1:30)
+
+#iterate through various value of resolutions 
+for(res in c(0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)){
+    snn.obj.res <- FindClusters(object = Arthritis.res, resolution = res, random.seed = 12345, verbose = FALSE)
+    
+    umap_plot_res <- DimPlot(snn.obj.res, reduction="umap", ncol=2, group.by = "seurat_clusters", label = TRUE, label.size = 3) +
+      NoLegend() +
+      ggtitle(paste("(resolution =", res,")"))
+    
+    # Append the plot to the list
+    plot_list_resolution[[as.character(res)]] <- umap_plot_res 
+}
+``` 
+
+# Combine all plots into a single figure.
+``` {r, fig.width= 9, fig.height=11}
+library(ggplot2)
+library(gridExtra)
+
+# Calculate the number of rows and columns for the grid
+total_plots <- length(c(0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1))
+n_rows <- ceiling(sqrt(total_plots))
+n_cols <- ceiling(total_plots / n_rows)
+
+# Combine all plots into a flexible grid
+combined_plot_res <- do.call(grid.arrange, c(plot_list_resolution, ncol = n_cols, nrow = n_rows))
+``` 
+
+# Save the combined plot
+``` {r}
+ggsave("combined_resolution_plots.png", combined_plot_res, height=18, width=20,  dpi=300)
+``` 
+
+
+# Run single umap with optimal resolution and min.dist
+
+Here I test resolution= 0.5 and min.dist= 0.01
+
+``` {r, fig.width= 5, fig.height=3}
+umap<- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:30,
+                          min.dist = 0.01)
+umap <- FindNeighbors(object =  umap, reduction="harmony", dims = 1:30)
+umap<- FindClusters(object = umap , resolution = 0.5 , random.seed = 12345, verbose = FALSE)
+DimPlot(umap, reduction="umap", label = TRUE, label.size = 3) +
+      theme_minimal() +
+  NoLegend()
+
+```
+
+# Locate Treg cluster
+
+``` {r, fig.width= 7, fig.height= 6}
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(umap, features = c("CD3E", "CD8A", "CD4", "FOXP3"),
+    pt.size = 0.2, ncol = 2)
+
+``` 
+# Feature plots
+
+``` {r, fig.width= 7, fig.height= 5}
+# Visualize canonical marker genes on the sctransform embedding.
+FeaturePlot(umap, features = c("CD3E", "CD8A", "CD4", "FOXP3"), pt.size = 0.2,
+    ncol = 2)
+``` 
+
+# Look like with resolution= 0.5 and min.dist= 0.01, Treg is well separated from other cell cluster. 
+
+``` {r}
+sessionInfo()
+```
+

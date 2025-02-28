@@ -1,0 +1,47 @@
+---
+title: "Single cell Seurat/SCTransform"
+date: "2023-11-08"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+# Objective
+
+1. Perform standard preprocessing steps
+2. Integration using Harmony
+3. Clustering and trick for fine-tune UMPA plots (finding best UMAP plots)
+
+# Load the required library 
+``` {r, warning= FALSE}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+```
+
+# Load individual data of each samples
+``` {r}
+#164S !
+A164S<- Read10X(data.dir = "164S")
+A164S2<- Read10X(data.dir = "164S2")
+
+#184S !
+A184S2<- Read10X(data.dir = "184S2")
+A184S3<- Read10X(data.dir = "184S3")
+
+#218S !
+A218S<- Read10X(data.dir = "218S")
+A218S2<- Read10X(data.dir = "218S2")
+
+#SA !
+ASA5<- Read10X(data.dir = "SA5")
+ASA6<- Read10X(data.dir = "SA6")
+ASA7<- Read10X(data.dir = "SA7")
+```
+

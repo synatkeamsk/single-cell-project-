@@ -1,0 +1,87 @@
+---
+title: "SENIC"
+output: html_document
+date: "2024-03-01"
+---
+
+# Packages installation 
+``` {r}
+## Required, SCENIC R is based on three R packages:
+BiocManager::install(c("AUCell")
+                     
+# Manually installed 
+install.packages("RcisTarget_0.99.0.tar.gz",repos = NULL,type="source")
+
+#GENIE3 ! 
+BiocManager::install(c("GENIE3")) # Can be replaced by GRNBoost (Linux & MacOS)
+
+## Optional (but highly recommended):
+# To score the network on cells (i.e. run AUCell):
+BiocManager::install(c("zoo", "mixtools"))
+
+#rbokeh package! 
+remotes::install_github("bokeh/rbokeh")
+
+# For various visualizations and perform t-SNEs:
+BiocManager::install(c("DT", "NMF", "ComplexHeatmap", "R2HTML", "Rtsne"))
+
+# To support paralell execution (not available in Windows):
+BiocManager::install(c("doMC", "doRNG"))
+
+## SCENIC
+if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+devtools::install_github("aertslab/SCENIC") 
+packageVersion("SCENIC")
+devtools::install_github("aertslab/SCopeLoomR", build_vignettes = TRUE)
+``` 
+
+# Create SENIC matrix from Seurat! 
+``` {r}
+library(tidyverse)
+library(Seurat)
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("RcisTarget")
+
+seurat.obj<- readRDS("all.clusters.annotated.obj.rds")
+DimPlot(seurat.obj, reduction = "umap", label = TRUE, label.size = 3.5) +
+  theme_minimal() +
+  NoLegend()
+
+#SENIC! 
+exprMat <- GetAssayData(seurat.obj, assay ="SCT")
+exprMat <- as.matrix(exprMat)
+
+# cell information
+Idents(seurat.obj)
+cellInfo <- data.frame(seuratCluster=Idents(seurat.obj))
+``` 
+
+# Creat SENIC Object! 
+``` {r}
+# https://github.com/aertslab/RcisTarget/blob/master/data/motifAnnotations_hgnc.RData
+# Initialize SCENIC settings
+install.packages("arrow")
+library(SCENIC)
+library(RcisTarget)
+org <- "hgnc" # specify the organism, mouse: mgi, human: hgnc, fly:dmel
+dbDir <- "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis"
+dbDir<- path.expand(dbDir)
+myDatasetTitle <- "Recurrent arthritis" # choose a name for your analysis
+data(defaultDbNames)
+dbs <- defaultDbNames[[org]]
+data(motifAnnotations_hgnc)
+motifAnnotations_hgnc <- motifAnnotations
+scenicOptions <- initializeScenic(org=org, 
+        dbDir = dbDir, 
+        dbs = dbs, 
+        datasetTitle= myDatasetTitle, 
+        nCores = 12)
+data(MotifAnnoations)
+``` 
+
+
+
+
+
