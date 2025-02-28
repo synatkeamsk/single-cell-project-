@@ -1,0 +1,1916 @@
+---
+title: "Doublet Finder with SCtransform"
+output: html_document
+date: "2023-11-14"
+---
+
+# Objective 
+
+Here, I perform the doublet finder and filter out doublet cells. 
+
+**Rational**
+
+Doublets/Mulitples of cells in the same well/droplet is a common issue in scRNAseq protocols. Especially in droplet-based methods whith overloading of cells. In a typical 10x experiment the proportion of doublets is linearly dependent on the amount of loaded cells. As indicated from the Chromium user guide, doublet rates are about as follows:
+
+
+Multiplet Rate (%)                  # of cell loaded          # of cell recovered 
+
+   # ~ 0.4                               ~  870                     ~ 500
+
+   # ~ 0.8                               ~ 1700                     ~ 1000
+
+   # ~ 1.6                               ~ 3500                     ~ 2000
+
+   # ~ 2.3                               ~ 5300                     ~ 3000
+
+   # ~ 3.1                               ~ 7000                     ~ 4000
+
+   # ~ 3.9                               ~ 8700                     ~ 5000
+
+   # ~ 4.6                               ~ 10500                    ~ 6000
+
+   # ~ 5.4                               ~ 12200                    ~ 7000
+
+   # ~ 6.1                               ~ 14000                    ~ 8000
+
+   # ~ 6.9                               ~ 15700                    ~ 9000
+
+   # ~ 7.6                               ~ 17400                    ~ 10000
+
+
+# libraries
+``` {r}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("glmGamPoi")
+```
+
+#========================================================================================================================================
+                                                   # patients 164S
+#========================================================================================================================================
+``` {r}
+#read data of 164S !
+A164S<- Read10X(data.dir = "164S")
+
+#create seurat object
+A164S<- CreateSeuratObject(counts = A164S, project = "164S", min.cells = 3, min.features = 200)
+A164S
+```
+
+``` {r}
+#add variable 
+A164S$type= "First arthritis" 
+
+#set percent MT
+A164S.mt<- PercentageFeatureSet(A164S, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.164s<- VlnPlot(A164S.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.164s
+
+#filter cells 
+Filtered.cells.164s <- subset(A164S.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <5500 & nCount_RNA>500 & nCount_RNA <25000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.164s<- VlnPlot(Filtered.cells.164s, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.164s
+
+#plot both
+unfiltered.164s/Filtered.164s
+``` 
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.164s <- Filtered.cells.164s[!grepl("MALAT1", rownames(Filtered.cells.164s)), ]
+
+# Filter Mitocondria
+Filtered.cells.164s <- Filtered.cells.164s[!grepl("^MT-", rownames(Filtered.cells.164s)), ]
+
+#Mitochondria
+Filtered.cells.164s <- Filtered.cells.164s[!grepl("^MT\\.", rownames(Filtered.cells.164s)), ]
+
+#Filter gene LOC
+Filtered.cells.164s <- Filtered.cells.164s[!grepl("^LOC(0-9)", rownames(Filtered.cells.164s)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.164s <- Filtered.cells.164s[ ! grepl('^RP[SL]', rownames(Filtered.cells.164s)), ]
+
+# HSPA
+Filtered.cells.164s  <- Filtered.cells.164s [!grepl("^HSPA", rownames(Filtered.cells.164s )), ]
+
+# MTRNR
+Filtered.cells.164s <- Filtered.cells.164s[!grepl("^MTRNR", rownames(Filtered.cells.164s)), ]
+
+# TR pattern
+Filtered.cells.164s <- Filtered.cells.164s[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.164s)), ]
+```  
+
+
+# Normalize the data using SCTransform
+
+``` {r}
+#SCTransform !
+Normalized.164s<- SCTransform(A164S, method = "glmGamPoi", verbose = FALSE)
+Normalized.164s <- RunPCA(Normalized.164s, seed.use = 12345,verbose = FALSE)
+
+#PC plot
+library(tidyverse)
+ElbowPlot(Normalized.164s, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+# UMAP ! 
+
+``` {r}
+#Run umap 
+Normalized.164s <- RunUMAP(Normalized.164s, seed.use = 12345, dims = 1:40)
+DimPlot(Normalized.164s, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_void() +
+    NoLegend() 
+``` 
+# save umap object
+``` {r}
+saveRDS(Normalized.164s, file = "A164S_umap.RDS")
+```
+
+# Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
+install.packages("DoubletFinder-master", repos= NULL, type = "source")
+library(DoubletFinder)
+
+## pK Identification
+doublet.A164S<- paramSweep(Normalized.164s, PCs = 1:40, sct = TRUE)
+doublet.stats_A164S <- summarizeSweep(doublet.A164S, GT = FALSE)
+bcmvn_A164S <- find.pK(doublet.stats_A164S)
+
+#save bcmv_A164S object
+saveRDS(bcmvn_A164S, file = "bcmvn_A164S.RDS")
+
+#ggplot 
+ggplot(bcmvn_A164S, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+
+``` {r}
+pK <- bcmvn_A164S %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.164s@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)           
+nExp_poi <- round(0.06*nrow(Normalized.164s@meta.data))  ## Assuming 5.5% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.164s <- doubletFinder(Normalized.164s, 
+                                     PCs = 1:40, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.164s@meta.data)
+DimPlot(Normalized.164s, reduction = 'umap', group.by = "DF.classifications_0.25_0.08_447") +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#save this object
+``` {r}
+saveRDS(Normalized.164s, file = "Normalized.164S.RDS")
+Normalized.164s<- readRDS("Normalized.164S.RDS")
+```
+
+# Number of doublet 
+
+``` {r}
+table(Normalized.164s@meta.data$DF.classifications_0.25_0.08_447)
+```
+
+``` {r}
+VlnPlot(Normalized.164s, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.08_447", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#filter out doublet ! 
+``` {r}
+#read the object i saved 
+Normalized.164s<- readRDS("Normalized.164s.RDS")
+
+Normalized.164s.singlet<- Normalized.164s[, Normalized.164s@meta.data[, "DF.classifications_0.25_0.08_447"] == "Singlet"]
+view(Normalized.164s.singlet)
+DimPlot(Normalized.164s.singlet) +
+  theme_minimal()
+``` 
+#save singlet object
+``` {r}
+saveRDS(Normalized.164s.singlet, file = "Singlet164S_v5_filter.RDS")
+```
+
+
+#========================================================================================================================================
+                                                   # patients 1642
+#========================================================================================================================================
+
+``` {r}
+#read data of 164S !
+A164S2<- Read10X(data.dir = "164S2")
+
+#create seurat object
+A164S2<- CreateSeuratObject(counts = A164S2, project = "164S2", min.cells = 3, min.features = 200)
+A164S2
+```
+
+``` {r}
+#add variable 
+A164S2$type= "Second arthritis" 
+
+#set percent MT
+A164S2.mt<- PercentageFeatureSet(A164S2, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.164S2<- VlnPlot(A164S2.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.164S2
+
+#filter cells 
+Filtered.cells.164S2 <- subset(A164S2.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <6000 & nCount_RNA>500 & nCount_RNA <32000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.164S2<- VlnPlot(Filtered.cells.164S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.164S2
+
+#plot both
+unfiltered.164S2/Filtered.164S2
+```
+
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.164S2 <- Filtered.cells.164S2[!grepl("MALAT1", rownames(Filtered.cells.164S2)), ]
+
+# Filter Mitocondria
+Filtered.cells.164S2 <- Filtered.cells.164S2[!grepl("^MT-", rownames(Filtered.cells.164S2)), ]
+
+#Mitochondria
+Filtered.cells.164S2 <- Filtered.cells.164S2[!grepl("^MT\\.", rownames(Filtered.cells.164S2)), ]
+
+#Filter gene LOC
+Filtered.cells.164S2 <- Filtered.cells.164S2[!grepl("^LOC(0-9)", rownames(Filtered.cells.164S2)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.164S2 <- Filtered.cells.164S2[ ! grepl('^RP[SL]', rownames(Filtered.cells.164S2)), ]
+
+# HSPA
+Filtered.cells.164S2 <- Filtered.cells.164S2 [!grepl("^HSPA", rownames(Filtered.cells.164S2 )), ]
+
+# MTRNR
+Filtered.cells.164S2 <- Filtered.cells.164S2[!grepl("^MTRNR", rownames(Filtered.cells.164S2)), ]
+
+# TR pattern
+Filtered.cells.164S2 <- Filtered.cells.164S2[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.164S2)), ]
+```  
+
+``` {r}
+Normalized.164S2<- SCTransform(Filtered.cells.164S2, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = FALSE)
+Normalized.164S2 <- RunPCA(Normalized.164S2, seed.use = 12345, verbose = FALSE)
+
+#PC plot
+ElbowPlot(Normalized.164S2, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+``` {r}
+#Run umap 
+Normalized.164S2 <- RunUMAP(Normalized.164S2,seed.use = 12345, dims = 1:40)
+DimPlot(Normalized.164S2, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_void() +
+    NoLegend() 
+``` 
+
+# save umap object
+``` {r}
+saveRDS(Normalized.164S2, file = "A164S2_umap.RDS")
+A164S2_umap<- readRDS("A164S2_umap.RDS")
+```
+
+# Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+## pK Identification
+doublet.A164S2<- paramSweep(Normalized.164S2, PCs = 1:40, sct = TRUE)
+doublet.stats_A164S2 <- summarizeSweep(doublet.A164S2, GT = FALSE)
+bcmvn_A164S2 <- find.pK(doublet.stats_A164S2)
+
+#save bcmv_A164S object
+saveRDS(bcmvn_A164S2, file = "bcmvn_A164S2.RDS")
+
+#ggplot 
+ggplot(bcmvn_A164S2, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+``` {r}
+pK <- bcmvn_A164S2 %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.164S2@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)           
+nExp_poi <- round(0.035*nrow(Normalized.164S2@meta.data))  ## Assuming 3.5% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.164S2 <- doubletFinder(Normalized.164S2, 
+                                     PCs = 1:40, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.164S2@meta.data)
+DimPlot(Normalized.164S2, reduction = 'umap', group.by = "DF.classifications_0.25_0.19_145") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+# Number of doublet 
+
+``` {r}
+table(Normalized.164S2@meta.data$DF.classifications_0.25_0.19_145)
+```
+``` {r}
+VlnPlot(Normalized.164S2, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.19_145", pt.size = 0.1) +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+#save this object
+``` {r}
+saveRDS(Normalized.164S2, file = "Normalized.164S2.RDS")
+Normalized.164S2<- readRDS("Normalized.164S2.RDS")
+```
+
+
+#filter out doublet ! 
+``` {r}
+Normalized.164S2.singlet<- Normalized.164S2[, Normalized.164S2@meta.data[, "DF.classifications_0.25_0.19_145"] == "Singlet"]
+view(Normalized.164S2.singlet)
+DimPlot(Normalized.164S2.singlet) +
+  theme_minimal()
+``` 
+#save singlet object
+``` {r}
+saveRDS(Normalized.164S2.singlet, file = "Singlet.164S2_v5_filter.RDS")
+```
+
+
+#========================================================================================================================================
+                                                   # patients 184S2
+#========================================================================================================================================
+
+``` {r}
+#read data of 184S2 !
+A184S2<- Read10X(data.dir = "184S2")
+
+#create seurat object
+A184S2<- CreateSeuratObject(counts = A184S2, project = "184S2", min.cells = 3, min.features = 200)
+A184S2
+```
+``` {r}
+#add variable 
+A184S2$type= "First arthritis" 
+
+#set percent MT
+A184S2.mt<- PercentageFeatureSet(A184S2, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.184S2<- VlnPlot(A184S2.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.184S2
+
+#filter cells 
+Filtered.cells.184S2 <- subset(A184S2.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <6000 & nCount_RNA>500 & nCount_RNA <30000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.184S2<- VlnPlot(Filtered.cells.184S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.184S2
+
+#plot both
+unfiltered.184S2/Filtered.184S2
+```
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.184S2<- Filtered.cells.184S2[!grepl("MALAT1", rownames(Filtered.cells.184S2)), ]
+
+# Filter Mitocondria
+Filtered.cells.184S2 <- Filtered.cells.184S2[!grepl("^MT-", rownames(Filtered.cells.184S2)), ]
+
+#Mitochondria
+Filtered.cells.184S2 <- Filtered.cells.184S2[!grepl("^MT\\.", rownames(Filtered.cells.184S2)), ]
+
+#Filter gene LOC
+Filtered.cells.184S2 <- Filtered.cells.184S2[!grepl("^LOC(0-9)", rownames(Filtered.cells.184S2)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.184S2 <- Filtered.cells.184S2[ ! grepl('^RP[SL]', rownames(Filtered.cells.184S2)), ]
+
+# HSPA
+Filtered.cells.184S2  <- Filtered.cells.184S2 [!grepl("^HSPA", rownames(Filtered.cells.184S2 )), ]
+
+# MTRNR
+Filtered.cells.184S2 <- Filtered.cells.184S2[!grepl("^MTRNR", rownames(Filtered.cells.184S2)), ]
+
+# TR pattern
+Filtered.cells.184S2 <- Filtered.cells.184S2[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.184S2)), ]
+```  
+
+
+``` {r}
+Normalized.184S2<- SCTransform(Filtered.cells.184S2, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = FALSE)
+Normalized.184S2 <- RunPCA(Normalized.184S2, seed.use = 12345, verbose = FALSE)
+
+#PC plot
+ElbowPlot(Normalized.184S2, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+``` {r}
+#Run umap 
+Normalized.184S2 <- RunUMAP(Normalized.184S2, dims = 1:40)
+DimPlot(Normalized.184S2, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_minimal() +
+    NoLegend() 
+```
+
+
+# save umap object
+``` {r}
+saveRDS(Normalized.184S2, file = "A184S2_umap.RDS")
+A184S2_umap<- readRDS("A184S2_umap.RDS")
+```
+
+
+#Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+## pK Identification
+doublet.A184S2<- paramSweep(Normalized.184S2, PCs = 1:40, sct = TRUE)
+doublet.stats_A184S2 <- summarizeSweep(doublet.A184S2, GT = FALSE)
+bcmvn_A184S2 <- find.pK(doublet.stats_A184S2)
+
+#save bcmv_A164S object
+saveRDS(bcmvn_A184S2, file = "bcmvn_A184S2.RDS")
+
+#ggplot 
+ggplot(bcmvn_A184S2, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+
+``` {r}
+pK <- bcmvn_A184S2 %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.184S2@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)           
+nExp_poi <- round(0.025*nrow(Normalized.184S2@meta.data))  ## Assuming 2.5 percent doublet
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.184S2 <- doubletFinder(Normalized.184S2, 
+                                     PCs = 1:40, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.184S2@meta.data)
+DimPlot(Normalized.184S2, reduction = 'umap', group.by = "DF.classifications_0.25_0.14_89") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+# Number of doublet 
+
+``` {r}
+table(Normalized.184S2@meta.data$DF.classifications_0.25_0.14_89)
+```
+``` {r}
+VlnPlot(Normalized.184S2, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.14_89", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#save this object
+``` {r}
+saveRDS(Normalized.184S2, file = "Normalized.184S2.RDS")
+Normalized.184S2<- readRDS("Normalized.184S2.RDS")
+```
+
+
+#filter out doublet ! 
+``` {r}
+Normalized.184S2.singlet<- Normalized.184S2[, Normalized.184S2@meta.data[, "DF.classifications_0.25_0.14_89"] == "Singlet"]
+view(Normalized.184S2.singlet)
+DimPlot(Normalized.184S2.singlet) +
+  theme_minimal()
+``` 
+#save singlet object
+``` {r}
+saveRDS(Normalized.184S2.singlet, file = "Singlet.184S2_v5_filter.RDS")
+```
+
+
+#========================================================================================================================================
+                                                   # patients 184S3                                                 #========================================================================================================================================
+
+``` {r}
+#read data of 184S3 !
+A184S3<- Read10X(data.dir = "184S3")
+
+#create seurat object
+A184S3<- CreateSeuratObject(counts = A184S3, project = "184S3", min.cells = 3, min.features = 200)
+A184S3
+```
+``` {r}
+#add variable 
+A184S3$type= "Second arthritis" 
+
+#set percent MT
+A184S3.mt<- PercentageFeatureSet(A184S3, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.184S3<- VlnPlot(A184S3.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.184S3
+
+#filter cells 
+Filtered.cells.184S3 <- subset(A184S3.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <6000 & nCount_RNA>500 & nCount_RNA <32000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.184S3<- VlnPlot(Filtered.cells.184S3, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.184S3
+
+#plot both
+unfiltered.184S3/Filtered.184S3
+```
+
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.184S3 <- Filtered.cells.184S3[!grepl("MALAT1", rownames(Filtered.cells.184S3)), ]
+
+# Filter Mitocondria
+Filtered.cells.184S3 <- Filtered.cells.184S3[!grepl("^MT-", rownames(Filtered.cells.184S3)), ]
+
+#Mitochondria
+Filtered.cells.184S3 <- Filtered.cells.184S3[!grepl("^MT\\.", rownames(Filtered.cells.184S3)), ]
+
+#Filter gene LOC
+Filtered.cells.184S3 <- Filtered.cells.184S3[!grepl("^LOC(0-9)", rownames(Filtered.cells.184S3)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.184S3 <- Filtered.cells.184S3[ ! grepl('^RP[SL]', rownames(Filtered.cells.184S3)), ]
+
+# HSPA
+Filtered.cells.184S3  <- Filtered.cells.184S3 [!grepl("^HSPA", rownames(Filtered.cells.184S3)), ]
+
+# MTRNR
+Filtered.cells.184S3 <- Filtered.cells.184S3[!grepl("^MTRNR", rownames(Filtered.cells.184S3)), ]
+
+# TR pattern
+Filtered.cells.184S3 <- Filtered.cells.184S3[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.184S3)), ]
+```  
+
+
+``` {r}
+Normalized.184S3<- SCTransform(Filtered.cells.184S3, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = FALSE)
+Normalized.184S3 <- RunPCA(Normalized.184S3, seed.use = 12345, verbose = FALSE)
+
+#PC plot
+ElbowPlot(Normalized.184S3, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+``` {r}
+#Run umap 
+Normalized.184S3 <- RunUMAP(Normalized.184S3, dims = 1:40)
+DimPlot(Normalized.184S3, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_void() +
+    NoLegend() 
+``` 
+# save umap object
+``` {r}
+saveRDS(Normalized.184S3, file = "A184S3_umap.RDS")
+```
+
+
+#Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+## pK Identification
+doublet.A184S3<- paramSweep(Normalized.184S3, PCs = 1:40, sct = TRUE)
+doublet.stats_A184S3 <- summarizeSweep(doublet.A184S3, GT = FALSE)
+bcmvn_A184S3 <- find.pK(doublet.stats_A184S3)
+
+#save bcmv_A184S3 object
+saveRDS(bcmvn_A184S3, file = "bcmvn_A184S3.RDS")
+
+#ggplot 
+ggplot(bcmvn_A184S3, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+
+
+``` {r}
+pK <- bcmvn_A184S3 %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.184S3@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)          
+nExp_poi <- round(0.016*nrow(Normalized.184S3@meta.data))  ## Assuming 1.6 percent doublet
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.184S3 <- doubletFinder(Normalized.184S3, 
+                                     PCs = 1:40, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.184S3@meta.data)
+DimPlot(Normalized.184S3, reduction = 'umap', group.by = "DF.classifications_0.25_0.04_29") +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Number of doublet 
+
+``` {r}
+table(Normalized.184S3@meta.data$DF.classifications_0.25_0.04_29)
+```
+
+``` {r}
+VlnPlot(Normalized.184S3, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.04_29", pt.size = 0.1) +
+  theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+#save this object
+``` {r}
+saveRDS(Normalized.184S3, file = "Normalized.184S3.RDS")
+Normalized.184S3<- readRDS("Normalized.184S3.RDS")
+```
+
+#filter out doublet ! 
+``` {r}
+Normalized.184S3.singlet<- Normalized.184S3[, Normalized.184S3@meta.data[, "DF.classifications_0.25_0.04_29"] == "Singlet"]
+view(Normalized.184S3.singlet)
+DimPlot(Normalized.184S3.singlet) +
+  theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+``` 
+#save singlet object
+``` {r}
+saveRDS(Normalized.184S3.singlet, file = "Singlet.184S3_v5_filter.RDS")
+```
+
+#========================================================================================================================================
+                                                   # patients 218S                                                #========================================================================================================================================
+
+``` {r}
+#read data of 184S3 !
+A218S<- Read10X(data.dir = "218S")
+
+#create seurat object
+A218S<- CreateSeuratObject(counts = A218S, project = "218S", min.cells = 3, min.features = 200)
+A218S
+```
+``` {r}
+#add variable 
+A218S$type= "First arthritis" 
+
+#set percent MT
+A218S.mt<- PercentageFeatureSet(A218S, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.218S<- VlnPlot(A218S.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.218S
+
+#filter cells 
+Filtered.cells.218S <- subset(A218S.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <5900 & nCount_RNA>500 & nCount_RNA <25000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.218S<- VlnPlot(Filtered.cells.218S, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.218S
+
+#plot both
+unfiltered.218S/Filtered.218S
+```
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.218S <- Filtered.cells.218S[!grepl("MALAT1", rownames(Filtered.cells.218S)), ]
+
+# Filter Mitocondria
+Filtered.cells.218S <- Filtered.cells.218S[!grepl("^MT-", rownames(Filtered.cells.218S)), ]
+
+#Mitochondria
+Filtered.cells.218S <- Filtered.cells.218S[!grepl("^MT\\.", rownames(Filtered.cells.218S)), ]
+
+#Filter gene LOC
+Filtered.cells.218S <- Filtered.cells.218S[!grepl("^LOC(0-9)", rownames(Filtered.cells.218S)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.218S <- Filtered.cells.218S[ ! grepl('^RP[SL]', rownames(Filtered.cells.218S)), ]
+
+# HSPA
+Filtered.cells.218S  <- Filtered.cells.218S[!grepl("^HSPA", rownames(Filtered.cells.218S)), ]
+
+# MTRNR
+Filtered.cells.218S <- Filtered.cells.218S[!grepl("^MTRNR", rownames(Filtered.cells.218S)), ]
+
+# TR pattern
+Filtered.cells.218S <- Filtered.cells.218S[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.218S)), ]
+```  
+
+
+``` {r}
+Normalized.218S<- SCTransform(Filtered.cells.218S, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = FALSE)
+Normalized.218S <- RunPCA(Normalized.218S, seed.use = 12345, verbose = FALSE)
+
+#PC plot
+ElbowPlot(Normalized.218S, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+``` {r}
+#Run umap 
+Normalized.218S <- RunUMAP(Normalized.218S, dims = 1:40)
+DimPlot(Normalized.218S, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_void() +
+    NoLegend() 
+``` 
+# save umap object
+``` {r}
+saveRDS(Normalized.218S, file = "A218S_umap.RDS")
+```
+
+#Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+## pK Identification
+doublet.A218S<- paramSweep(Normalized.218S, PCs = 1:40, sct = TRUE)
+doublet.stats_A218S <- summarizeSweep(doublet.A218S, GT = FALSE)
+bcmvn_A218S <- find.pK(doublet.stats_A218S)
+
+#save bcmv_A218S object
+saveRDS(bcmvn_A218S, file = "bcmvn_A218S.RDS")
+
+#ggplot 
+ggplot(bcmvn_A218S, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+
+
+
+``` {r}
+pK <- bcmvn_A218S %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.218S@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)           ## ex: annotations 
+nExp_poi <- round(0.06*nrow(Normalized.218S@meta.data))  ## Assuming 6 percent doublet
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.218S <- doubletFinder(Normalized.218S, 
+                                     PCs = 1:40, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.218S@meta.data)
+DimPlot(Normalized.218S, reduction = 'umap', group.by = "DF.classifications_0.25_0.13_515") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Number of doublet 
+
+``` {r}
+table(Normalized.218S@meta.data$DF.classifications_0.25_0.13_515)
+```
+
+``` {r}
+VlnPlot(Normalized.218S, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.13_515", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+#save this object
+``` {r}
+saveRDS(Normalized.218S, file = "Normalized.218S.RDS")
+```
+
+
+#filter out doublet ! 
+``` {r}
+Normalized.218S.singlet<- Normalized.218S[, Normalized.218S@meta.data[, "DF.classifications_0.25_0.13_515"] == "Singlet"]
+view(Normalized.218S.singlet)
+DimPlot(Normalized.218S.singlet) +
+  theme_minimal()
+``` 
+
+#save singlet object
+``` {r}
+saveRDS(Normalized.218S.singlet, file = "Singlet.218S_v5_filter.RDS")
+```
+
+#========================================================================================================================================
+                                                   # patients 218S2                                                #========================================================================================================================================
+
+``` {r}
+#read data of 184S3 !
+A218S2<- Read10X(data.dir = "218S2")
+
+#create seurat object
+A218S2<- CreateSeuratObject(counts = A218S2, project = "218S2", min.cells = 3, min.features = 200)
+A218S2
+```
+``` {r}
+#add variable 
+A218S2$type= "Second arthritis" 
+
+#set percent MT
+A218S2.mt<- PercentageFeatureSet(A218S2, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.218S2<- VlnPlot(A218S2.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.218S2
+
+#filter cells 
+Filtered.cells.218S2 <- subset(A218S2.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <6000 & nCount_RNA>500 & nCount_RNA <28000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.218S2<- VlnPlot(Filtered.cells.218S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.218S2
+
+#plot both
+unfiltered.218S2/Filtered.218S2
+```
+
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.218S2 <- Filtered.cells.218S2[!grepl("MALAT1", rownames(Filtered.cells.218S2)), ]
+
+# Filter Mitocondria
+Filtered.cells.218S2 <- Filtered.cells.218S2[!grepl("^MT-", rownames(Filtered.cells.218S2)), ]
+
+#Mitochondria
+Filtered.cells.218S2 <- Filtered.cells.218S2[!grepl("^MT\\.", rownames(Filtered.cells.218S2)), ]
+
+#Filter gene LOC
+Filtered.cells.218S2 <- Filtered.cells.218S2[!grepl("^LOC(0-9)", rownames(Filtered.cells.218S2)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.218S2 <- Filtered.cells.218S2[ ! grepl('^RP[SL]', rownames(Filtered.cells.218S2)), ]
+
+# HSPA
+Filtered.cells.218S2  <- Filtered.cells.218S2 [!grepl("^HSPA", rownames(Filtered.cells.218S2)), ]
+
+# MTRNR
+Filtered.cells.218S2 <- Filtered.cells.218S2[!grepl("^MTRNR", rownames(Filtered.cells.218S2)), ]
+
+# TR pattern
+Filtered.cells.218S2<- Filtered.cells.218S2[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.218S2)), ]
+```  
+
+
+
+``` {r}
+Normalized.218S2<- SCTransform(Filtered.cells.218S2, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = FALSE)
+Normalized.218S2 <- RunPCA(Normalized.218S2, seed.use = 12345, verbose = FALSE)
+
+#PC plot
+ElbowPlot(Normalized.218S2, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+``` {r}
+#Run umap 
+Normalized.218S2 <- RunUMAP(Normalized.218S2, dims = 1:40)
+DimPlot(Normalized.218S2, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_void() +
+    NoLegend() 
+``` 
+# save umap object
+``` {r}
+saveRDS(Normalized.218S2, file = "A218S2_umap.RDS")
+```
+
+#Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+## pK Identification
+doublet.A218S2<- paramSweep(Normalized.218S2, PCs = 1:40, sct = TRUE)
+doublet.stats_A218S2 <- summarizeSweep(doublet.A218S2, GT = FALSE)
+bcmvn_A218S2 <- find.pK(doublet.stats_A218S2)
+
+#save bcmv_A218S2 object
+saveRDS(bcmvn_A218S2, file = "bcmvn_A218S2.RDS")
+
+#ggplot 
+ggplot(bcmvn_A218S2, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+
+
+``` {r}
+pK <- bcmvn_A218S2 %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.218S2@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)           
+nExp_poi <- round(0.031*nrow(Normalized.218S2@meta.data))  ## Assuming 3.1 percent doublet
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.218S2 <- doubletFinder(Normalized.218S2, 
+                                     PCs = 1:40, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.218S2@meta.data)
+DimPlot(Normalized.218S2, reduction = 'umap', group.by = "DF.classifications_0.25_0.06_119") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Number of doublet 
+
+``` {r}
+table(Normalized.218S2@meta.data$DF.classifications_0.25_0.06_119)
+```
+
+``` {r}
+VlnPlot(Normalized.218S2, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.06_119", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+#save this object
+``` {r}
+saveRDS(Normalized.218S2, file = "Normalized.218S2.RDS")
+```
+
+
+#filter out doublet ! 
+``` {r}
+Normalized.218S2.singlet<- Normalized.218S2[, Normalized.218S2@meta.data[, "DF.classifications_0.25_0.06_119"] == "Singlet"]
+view(Normalized.218S2.singlet)
+DimPlot(Normalized.218S2.singlet) +
+  theme_minimal()
+``` 
+#save singlet object
+``` {r}
+saveRDS(Normalized.218S2.singlet, file = "Singlet.218S2_v5_filter.RDS")
+```
+#========================================================================================================================================
+                                                   # patients SA5                                                #========================================================================================================================================
+
+``` {r}
+#read data of SA5 !
+ASA5<- Read10X(data.dir = "SA5")
+
+#create seurat object
+ASA5<- CreateSeuratObject(counts = ASA5, project = "SA5", min.cells = 3, min.features = 200)
+ASA5
+```
+``` {r}
+#add variable 
+ASA5$type= "Osteoarthritis" 
+
+#set percent MT
+ASA5.mt<- PercentageFeatureSet(ASA5, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.SA5<- VlnPlot(ASA5.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.SA5
+
+#filter cells 
+Filtered.cells.SA5 <- subset(ASA5.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <6900 & nCount_RNA>500 & nCount_RNA <31000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.SA5<- VlnPlot(Filtered.cells.SA5, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.SA5
+
+#plot both
+unfiltered.SA5/Filtered.SA5
+```
+
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.SA5 <- Filtered.cells.SA5[!grepl("MALAT1", rownames(Filtered.cells.SA5)), ]
+
+# Filter Mitocondria
+Filtered.cells.SA5 <- Filtered.cells.SA5[!grepl("^MT-", rownames(Filtered.cells.SA5)), ]
+
+#Mitochondria
+Filtered.cells.SA5 <- Filtered.cells.SA5[!grepl("^MT\\.", rownames(Filtered.cells.SA5)), ]
+
+#Filter gene LOC
+Filtered.cells.SA5 <- Filtered.cells.SA5[!grepl("^LOC(0-9)", rownames(Filtered.cells.SA5)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.SA5 <- Filtered.cells.SA5[ ! grepl('^RP[SL]', rownames(Filtered.cells.SA5)), ]
+
+# HSPA
+Filtered.cells.SA5  <- Filtered.cells.SA5 [!grepl("^HSPA", rownames(Filtered.cells.SA5)), ]
+
+# MTRNR
+Filtered.cells.SA5 <- Filtered.cells.SA5[!grepl("^MTRNR", rownames(Filtered.cells.SA5)), ]
+
+# TR pattern
+Filtered.cells.SA5 <- Filtered.cells.SA5[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.SA5)), ]
+```  
+
+
+# SCTransform normalization
+``` {r}
+Normalized.SA5<- SCTransform(Filtered.cells.SA5, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = FALSE)
+Normalized.SA5 <- RunPCA(Normalized.SA5, seed.use = 12345, verbose = FALSE)
+
+#PC plot
+ElbowPlot(Normalized.SA5, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+# UMAP
+``` {r}
+Normalized.SA5 <- RunUMAP(Normalized.SA5, dims = 1:40)
+DimPlot(Normalized.SA5, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_void() +
+    NoLegend() 
+``` 
+# save umap object
+``` {r}
+saveRDS(Normalized.SA5, file = "ASA5_umap.RDS")
+```
+
+#Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+## pK Identification
+doublet.ASA5<- paramSweep(Normalized.SA5, PCs = 1:40, sct = TRUE)
+doublet.stats_ASA5 <- summarizeSweep(doublet.ASA5, GT = FALSE)
+bcmvn_ASA5 <- find.pK(doublet.stats_ASA5)
+
+#save object
+saveRDS(bcmvn_ASA5, file = "bcmvn_ASA5.RDS")
+
+#ggplot 
+ggplot(bcmvn_ASA5, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+
+``` {r}
+pK <- bcmvn_ASA5 %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.SA5@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)            
+nExp_poi <- round(0.054*nrow(Normalized.SA5@meta.data))  ## Assuming 5.4 percent doublet
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.SA5 <- doubletFinder(Normalized.SA5, 
+                                     PCs = 1:40, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.SA5@meta.data)
+DimPlot(Normalized.SA5, reduction = 'umap', group.by = "DF.classifications_0.25_0.04_356") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Number of doublet 
+
+``` {r}
+table(Normalized.SA5@meta.data$DF.classifications_0.25_0.04_356)
+```
+
+``` {r}
+VlnPlot(Normalized.SA5, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.04_356", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+#save this object
+``` {r}
+saveRDS(Normalized.SA5, file = "Normalized.SA5.RDS")
+```
+
+
+#filter out doublet ! 
+``` {r}
+Normalized.SA5.singlet<- Normalized.SA5[, Normalized.SA5@meta.data[, "DF.classifications_0.25_0.04_356"] == "Singlet"]
+view(Normalized.SA5.singlet)
+DimPlot(Normalized.SA5.singlet) +
+  theme_minimal()
+``` 
+
+#save singlet object
+``` {r}
+saveRDS(Normalized.SA5.singlet, file = "Singlet.SA5_v5_filter.RDS")
+```
+
+#========================================================================================================================================
+                                                   # patients SA6                                                #========================================================================================================================================
+
+
+``` {r}
+#read data of SA6 !
+ASA6<- Read10X(data.dir = "SA6")
+
+#create seurat object
+ASA6<- CreateSeuratObject(counts = ASA6, project = "SA6", min.cells = 3, min.features = 200)
+ASA6
+```
+``` {r}
+#add variable 
+ASA6$type= "Osteoarthritis" 
+
+#set percent MT
+ASA6.mt<- PercentageFeatureSet(ASA6, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.SA6<- VlnPlot(ASA6.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.SA6
+
+#filter cells 
+Filtered.cells.SA6 <- subset(ASA6.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <7500
+              & nCount_RNA>500 & nCount_RNA <58000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.SA6<- VlnPlot(Filtered.cells.SA6, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.SA6
+
+#plot both
+unfiltered.SA6/Filtered.SA6
+```
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.SA6 <- Filtered.cells.SA6[!grepl("MALAT1", rownames(Filtered.cells.SA6)), ]
+
+# Filter Mitocondria
+Filtered.cells.SA6 <- Filtered.cells.SA6[!grepl("^MT-", rownames(Filtered.cells.SA6)), ]
+
+#Mitochondria
+Filtered.cells.SA6 <- Filtered.cells.SA6[!grepl("^MT\\.", rownames(Filtered.cells.SA6)), ]
+
+#Filter gene LOC
+Filtered.cells.SA6 <- Filtered.cells.SA6[!grepl("^LOC(0-9)", rownames(Filtered.cells.SA6)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.SA6 <- Filtered.cells.SA6[ ! grepl('^RP[SL]', rownames(Filtered.cells.SA6)), ]
+
+# HSPA
+Filtered.cells.SA6  <- Filtered.cells.SA6 [!grepl("^HSPA", rownames(Filtered.cells.SA6)), ]
+
+# MTRNR
+Filtered.cells.SA6 <- Filtered.cells.SA6[!grepl("^MTRNR", rownames(Filtered.cells.SA6)), ]
+
+# TR pattern
+Filtered.cells.SA6 <- Filtered.cells.SA6[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.SA6)), ]
+```  
+
+
+``` {r}
+Normalized.SA6<- SCTransform(Filtered.cells.SA6, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = FALSE)
+Normalized.SA6 <- RunPCA(Normalized.SA6, verbose = FALSE, seed.use = 12345)
+
+#PC plot
+ElbowPlot(Normalized.SA6, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+``` {r}
+#Run umap 
+Normalized.SA6 <- RunUMAP(Normalized.SA6, seed.use = 12345, dims = 1:40)
+DimPlot(Normalized.SA6, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_void() +
+    NoLegend() 
+``` 
+# save umap object
+``` {r}
+saveRDS(Normalized.SA6, file = "ASA6_umap.RDS")
+```
+
+#Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+## pK Identification
+doublet.ASA6<- paramSweep(Normalized.SA6, PCs = 1:40, sct = TRUE)
+doublet.stats_ASA6 <- summarizeSweep(doublet.ASA6, GT = FALSE)
+bcmvn_ASA6 <- find.pK(doublet.stats_ASA6)
+
+#save object
+saveRDS(bcmvn_ASA6, file = "bcmvn_ASA6.RDS")
+
+#ggplot 
+ggplot(bcmvn_ASA6, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+
+``` {r}
+pK <- bcmvn_ASA6 %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.SA6@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)           
+nExp_poi <- round(0.05*nrow(Normalized.SA6@meta.data))  ## Assuming 5 percent doublet
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.SA6 <- doubletFinder(Normalized.SA6, 
+                                     PCs = 1:45, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.SA6@meta.data)
+DimPlot(Normalized.SA6, reduction = 'umap', group.by = "DF.classifications_0.25_0.3_307") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+# Number of doublet 
+
+``` {r}
+table(Normalized.SA6@meta.data$DF.classifications_0.25_0.3_307)
+```
+
+``` {r}
+VlnPlot(Normalized.SA6, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.3_307", pt.size = 0.1) +
+  theme_minimal()
+```
+#save this object
+``` {r}
+saveRDS(Normalized.SA6, file = "Normalized.SA6.RDS")
+```
+
+
+#filter out doublet ! 
+``` {r}
+Normalized.SA6.singlet<- Normalized.SA6[, Normalized.SA6@meta.data[, "DF.classifications_0.25_0.3_307"] == "Singlet"]
+view(Normalized.SA6.singlet)
+DimPlot(Normalized.SA6.singlet) +
+  theme_minimal()
+``` 
+
+#save singlet object
+``` {r}
+saveRDS(Normalized.SA6.singlet, file = "Singlet.SA6_v5_filter.RDS")
+```
+
+
+#========================================================================================================================================
+                                                   # patients SA7                                                #========================================================================================================================================
+
+
+``` {r}
+#read data of SA6 !
+ASA7<- Read10X(data.dir = "SA7")
+
+#create seurat object
+ASA7<- CreateSeuratObject(counts = ASA7, project = "SA7", min.cells = 3, min.features = 200)
+ASA7
+```
+``` {r}
+#add variable 
+ASA7$type= "Osteoarthritis" 
+
+#set percent MT
+ASA7.mt<- PercentageFeatureSet(ASA7, pattern = "^MT-", col.name = "percent.mt")
+
+#plot unfiltered data 
+unfiltered.SA7<- VlnPlot(ASA7.mt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+unfiltered.SA7
+
+#filter cells 
+Filtered.cells.SA7 <- subset(ASA7.mt, subset = nFeature_RNA >500 
+              & nFeature_RNA <7500
+              & nCount_RNA>500 & nCount_RNA <50000 & percent.mt <15)
+
+#plot filtered cells!  
+Filtered.SA7<- VlnPlot(Filtered.cells.SA7, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+Filtered.SA7
+
+#plot both
+unfiltered.SA7/Filtered.SA7
+```
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Filtered.cells.SA7 <- Filtered.cells.SA7[!grepl("MALAT1", rownames(Filtered.cells.SA7)), ]
+
+# Filter Mitocondria
+Filtered.cells.SA7 <- Filtered.cells.SA7[!grepl("^MT-", rownames(Filtered.cells.SA7)), ]
+
+#Mitochondria
+Filtered.cells.SA7 <- Filtered.cells.SA7[!grepl("^MT\\.", rownames(Filtered.cells.SA7)), ]
+
+#Filter gene LOC
+Filtered.cells.SA7 <- Filtered.cells.SA7[!grepl("^LOC(0-9)", rownames(Filtered.cells.SA7)), ]
+
+# Filter Ribossomal gene 
+Filtered.cells.SA7 <- Filtered.cells.SA7[ ! grepl('^RP[SL]', rownames(Filtered.cells.SA7)), ]
+
+# HSPA
+Filtered.cells.SA7  <- Filtered.cells.SA7 [!grepl("^HSPA", rownames(Filtered.cells.SA7)), ]
+
+# MTRNR
+Filtered.cells.SA7 <- Filtered.cells.SA7[!grepl("^MTRNR", rownames(Filtered.cells.SA7)), ]
+
+# TR pattern
+Filtered.cells.SA7 <- Filtered.cells.SA7[!grepl("^TR(A|B|G|D)V", rownames(Filtered.cells.SA7)), ]
+```  
+
+
+``` {r}
+Normalized.SA7<- SCTransform(Filtered.cells.SA7, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = FALSE)
+Normalized.SA7 <- RunPCA(Normalized.SA7, seed.use = 12345, verbose = FALSE)
+
+#PC plot
+ElbowPlot(Normalized.SA7, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+``` {r}
+#Run umap 
+Normalized.SA7 <- RunUMAP(Normalized.SA7, seed.use = 12345, dims = 1:40)
+DimPlot(Normalized.SA7, reduction = "umap", label = TRUE, label.size = 4) +
+  theme_void() +
+    NoLegend() 
+``` 
+# save umap object
+``` {r}
+saveRDS(Normalized.SA7, file = "ASA7_umap.RDS")
+```
+
+#Perform doublet finder
+
+``` {r, fig.width= 10, fig.height= 4}
+## pK Identification
+doublet.ASA7<- paramSweep(Normalized.SA7, PCs = 1:40, sct = TRUE)
+doublet.stats_ASA7 <- summarizeSweep(doublet.ASA7, GT = FALSE)
+bcmvn_ASA7 <- find.pK(doublet.stats_ASA7)
+
+#save object
+saveRDS(bcmvn_ASA7, file = "bcmvn_ASA7.RDS")
+
+#ggplot 
+ggplot(bcmvn_ASA7, aes(pK, BCmetric, group = 1)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal()
+``` 
+
+``` {r}
+pK <- bcmvn_ASA7 %>% # select the pK that corresponds to max bcmvn to optimize doublet detection
+  filter(BCmetric == max(BCmetric)) %>%
+  select(pK) 
+pK <- as.numeric(as.character(pK[[1]]))
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Normalized.SA7@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)           
+nExp_poi <- round(0.05*nrow(Normalized.SA7@meta.data))  ## Assuming 5 percent doublet
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+# run doubletFinder 
+Normalized.SA7 <- doubletFinder(Normalized.SA7, 
+                                     PCs = 1:40, 
+                                     pN = 0.25, 
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj,
+                                     reuse.pANN = FALSE, sct = TRUE)
+
+# visualize doublets
+view(Normalized.SA7@meta.data)
+DimPlot(Normalized.SA7, reduction = 'umap', group.by = "DF.classifications_0.25_0.21_139") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+# Number of doublet 
+
+``` {r}
+table(Normalized.SA7@meta.data$DF.classifications_0.25_0.21_139)
+```
+
+``` {r}
+VlnPlot(Normalized.SA7, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.21_139", pt.size = 0.1) +
+  theme_minimal()
+```
+#save this object
+``` {r}
+saveRDS(Normalized.SA7, file = "Normalized.SA7.RDS")
+```
+
+#filter out doublet ! 
+``` {r}
+Normalized.SA7.singlet<- Normalized.SA7[, Normalized.SA7@meta.data[, "DF.classifications_0.25_0.21_139"] == "Singlet"]
+view(Normalized.SA7.singlet)
+DimPlot(Normalized.SA7.singlet) +
+  theme_minimal()
+``` 
+#save singlet object
+``` {r}
+saveRDS(Normalized.SA7.singlet, file = "Singlet.SA7_v5_filter.RDS")
+```
+
+# Merge singlet object for downstream analysis 
+
+```{r, fig.width= 9, fig.height= 5}
+#merge objects
+Singlet<- merge(Normalized.164s.singlet, y=c(Normalized.164S2.singlet, Normalized.184S2.singlet, 
+                                                     Normalized.184S3.singlet, Normalized.218S.singlet, 
+                                                     Normalized.218S2.singlet, Normalized.SA5.singlet,
+                                                     Normalized.SA6.singlet, Normalized.SA7.singlet))
+# Save merged singlet object! 
+saveRDS(Singlet, file = "Singlet_SCT_merge.RDS")
+
+
+#plot unfiltered data 
+VlnPlot(Singlet, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+# Feature and feature relationship 
+
+``` {r}
+plot1 <- FeatureScatter(Singlet, feature1 = "nCount_RNA", feature2 = "percent.mt") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+plot2 <- FeatureScatter(Singlet, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+plot1|plot2 
+``` 
+
+# Normalize the data using SCTransform
+
+``` {r}
+#SCTransform
+Arthritis<- SCTransform(Singlet, 
+                        method= "glmGamPoi", 
+                        vars.to.regress = "percent.mt", 
+                        verbose= FALSE)
+
+#Run PCA
+Arthritis<- RunPCA(Arthritis, verbose = FALSE)
+
+#Save pca object 
+saveRDS(Arthritis, file = "preprocess_SCT_PCA.RDS")
+rm(Arthritis.integration)
+
+#Elbow plot
+ElbowPlot(Arthritis, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+
+# Heatmap for Deg
+
+``` {r, fig.width= 8, fig.height= 5}
+DimHeatmap(Arthritis, dims = 1:3, cells = 500, balanced = TRUE)
+``` 
+
+# Integration and clustering 
+
+``` {r}
+library(harmony)
+Arthritis<- readRDS("preprocess_SCT_PCA.RDS")
+Arthritis.integration<- RunHarmony(Arthritis ,group.by.vars = "orig.ident")
+
+#save harmony object
+saveRDS(Arthritis.integration, file = "integration.harmony.RDS")
+
+UMAP.singlparam<- FindNeighbors(Arthritis.integration, reduction = "harmony", dims = 1:43, verbose = FALSE)
+UMAP.singlparam<- FindClusters(UMAP.singlparam, resolution = 0.4)
+UMAP.singlparam<- RunUMAP(object = UMAP.singlparam,
+                          reduction = "harmony",
+                          dims = 1:43)
+
+#save this object
+saveRDS(UMAP.singlparam, file = "UMAP_SCT_Filter.RDS")
+
+#plot umap 
+UMAP.singlparam<- readRDS("UMAP_SCT_Filter.RDS")
+DimPlot(UMAP.singlparam, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+
+# Visualize All the three groups in UMAP
+``` {r,  fig.width= 8, fig.height= 4}
+DimPlot(UMAP.singlparam, reduction = "umap", split.by = "type") + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  NoLegend()
+``` 
+
+``` {r, fig.width= 8, fig.height= 8}
+FeaturePlot(UMAP.singlparam, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19" ), pt.size = 0.2,
+    ncol = 2)
+```
+``` {r, fig.width= 11, fig.height= 12}
+FeaturePlot(UMAP.singlparam, features = c("EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "S100A8", "S100A9", "CD8A"), pt.size = 0.2,
+    ncol = 3)
+```
+
+``` {r, fig.width= 10, fig.height= 5}
+FeaturePlot(UMAP.singlparam, features = c("EPCAM", "PTPRC", "COL1A1"), pt.size = 0.2, ncol = 3)
+```
+
+# Remove unlabelled cells  
+
+``` {r}
+plot<- DimPlot(UMAP.singlparam, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+seurat.object<- CellSelector(plot = plot, UMAP.singlparam)
+
+plot1= DimPlot(seurat.object, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+plot1
+``` 
+``` {r}
+ggsave("doublet.round1.tiff", plot = plot1, height=5, width = 6, units = "in", dpi = 300)
+``` 
+
+# examine DEG
+
+``` {r}
+prepsct<- PrepSCTFindMarkers(seurat.object)
+selectedcluster<- FindMarkers(prepsct,assay = "SCT", ident.1 = "SelectedCells", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE)
+head(selectedcluster, n = 20)
+``` 
+
+# Save this deg
+``` {r}
+selectedcluster<- selectedcluster %>% arrange(desc(avg_log2FC))
+write.csv(selectedcluster, file = "E.csv")
+``` 
+
+
+# Investigate the SelectedCells 
+
+``` {r}
+#subset selectedcell !
+SelectedCells <- subset(seurat.object, idents = "SelectedCells")
+SelectedCells
+```
+
+#examine mfeatureRNA and ncountRNA
+``` {r, fig.width= 7, fig.height= 5}
+cell1<- VlnPlot(SelectedCells, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+cell1
+``` 
+
+# Investigate cluster 15 
+
+``` {r, fig.width= 9, fig.height= 5}
+#subset selectedcell !
+cluster15 <- subset(UMAP.singlparam, idents = 15)
+cluster15<- VlnPlot(cluster15, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+cluster15|cell2
+
+``` 
+
+# examine DEG
+
+``` {r}
+prepsct<- PrepSCTFindMarkers(UMAP.singlparam)
+selectedcluster<- FindMarkers(prepsct,assay = "SCT", ident.1 = 15, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE)
+head(selectedcluster, n = 20)
+``` 
+
+# Save this deg
+``` {r}
+selectedcluster<- selectedcluster %>% arrange(desc(avg_log2FC))
+write.csv(selectedcluster, file = "clu15.csv")
+``` 
+
+
+
+``` {r, fig.width= 8, fig.height= 8}
+FeaturePlot(UMAP.singlparam, features = c("CD3D"), pt.size = 0.2, label = TRUE)
+```
+
+
+``` {r, fig.width= 8, fig.height= 8}
+FeaturePlot(UMAP.singlparam, features = c("S100A8"), pt.size = 0.2, label = TRUE)
+```
+``` {r, fig.width= 8, fig.height= 8}
+FeaturePlot(UMAP.singlparam, features = c("S100A9"), pt.size = 0.2, label = TRUE)
+```
+``` {r, fig.width= 8, fig.height= 8}
+FeaturePlot(UMAP.singlparam, features = c("EPCAM"), pt.size = 0.2, label = TRUE)
+```
+``` {r, fig.width= 8, fig.height= 8}
+FeaturePlot(UMAP.singlparam, features = c("PTPRC"), pt.size = 0.2, label = TRUE)
+```
+``` {r, fig.width= 8, fig.height= 8}
+FeaturePlot(UMAP.singlparam, features = c("COL1A1"), pt.size = 0.2, label = TRUE)
+```
+# Select control cluster== cluster 17 
+
+``` {r}
+seurat.obj.cluster17<- subset(UMAP.singlparam, idents = "17")
+cell2<- VlnPlot(seurat.obj.cluster17, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+cell2
+
+```
+``` {r, fig.width= 9, fig.height= 5}
+cell1|cell2
+```
+```{r, warning=FALSE, fig.height=6, fig.width= 6}
+#"EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "S100A8", "S100A9", "CD8A"
+
+feature= c("CD3D", "S100A8", "S100A9", "EPCAM", "CD79A", "COL1A1")
+VlnPlot(SelectedCells, features = feature)
+``` 
+
+
+
+# Remove that tiny population! 
+
+``` {r}
+seurat.obj.final<- subset(seurat.object, idents = c("0", "1", "2", "3", "4", "5", "6", 
+                                                    "7", "8", "9", 
+                                                    "10", "11", "12", "13", "14", "15", "16", 
+                                                 "17", "18", "19", "20"))
+DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+```
+# checking doublet !
+
+**cluster 5** 
+
+``` {r}
+plot<- DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+seurat.object<- CellSelector(plot = plot, seurat.obj.final)
+
+DimPlot(seurat.object, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+``` 
+# visualize nfeatureRNA & nCount-RNA
+
+# Investigate the SelectedCells 
+
+``` {r}
+#subset selectedcell !
+SelectedCells <- subset(seurat.object, idents = c("SelectedCells"))
+SelectedCells
+```
+
+``` {r}
+cell3<- VlnPlot(SelectedCells, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+cell3|cell2
+``` 
+
+# Remove that tiny population! 
+
+``` {r}
+seurat.obj.final<- subset(seurat.object, idents = c("0", "1", "2", "3", "4", "5", "6", 
+                                                    "7", "8", "9", 
+                                                    "10", "11", "12", "13", "14", "15", "16", 
+                                                 "17", "18", "19", "20"))
+DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+
+#save rds
+saveRDS(seurat.obj.final, file = "seurat.obj.final.rds")
+```
+``` {r}
+plot<- DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+seurat.object<- CellSelector(plot = plot, seurat.obj.final)
+
+DimPlot(seurat.object, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+```
+``` {r}
+#subset selectedcell !
+SelectedCells <- subset(seurat.object, idents = c("SelectedCells"))
+SelectedCells
+```
+
+``` {r}
+cell4<- VlnPlot(SelectedCells, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+cell4|cell2
+``` 
+``` {r, fig.width= 12, fig.height= 9}
+FeaturePlot(SelectedCells, features = c("EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "S100A8", "S100A9", "CD8A"), pt.size = 0.2,
+    ncol = 3)
+```
+
+``` {r}
+seurat.obj.final<- subset(seurat.object, idents = c("0", "1", "2", "3", "4", "5", "6", 
+                                                    "7", "8", "9", 
+                                                    "10", "11", "12", "13", "14", "15", "16", 
+                                                 "17", "18", "19", "20"))
+DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+```
+``` {r}
+plot<- DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+seurat.object<- CellSelector(plot = plot, seurat.obj.final)
+
+DimPlot(seurat.object, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+```
+``` {r}
+#subset selectedcell !
+SelectedCells <- subset(seurat.object, idents = c("SelectedCells"))
+SelectedCells
+```
+``` {r}
+VlnPlot(SelectedCells, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+``` 
+``` {r, fig.width= 12, fig.height= 9}
+FeaturePlot(SelectedCells, features = c("EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "S100A8", "S100A9", "CD8A"), pt.size = 0.2,
+    ncol = 3)
+```
+
+
+``` {r}
+seurat.obj.final<- subset(seurat.object, idents = c("0", "1", "2", "3", "4", "5", "6", 
+                                                    "7", "8", "9", 
+                                                    "10", "11", "12", "13", "14", "15", "16", 
+                                                 "17", "18", "19", "20"))
+DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+```
+
+
+
+``` {r}
+plot<- DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+seurat.object<- CellSelector(plot = plot, seurat.obj.final)
+
+DimPlot(seurat.object, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+```
+
+
+
+``` {r}
+#subset selectedcell !
+SelectedCells <- subset(seurat.object, idents = c("SelectedCells"))
+SelectedCells
+```
+
+
+
+``` {r}
+VlnPlot(SelectedCells, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+```
+
+
+``` {r, fig.width= 12, fig.height= 9}
+FeaturePlot(SelectedCells, features = c("EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "S100A8", "S100A9", "CD8A"), pt.size = 0.2,
+    ncol = 3)
+```
+
+
+
+``` {r}
+seurat.obj.final<- subset(seurat.object, idents = c("0", "1", "2", "3", "4", "5", "6", 
+                                                    "7", "8", "9", 
+                                                    "10", "11", "12", "13", "14", "15", "16", 
+                                                 "17", "18", "19", "20"))
+DimPlot(seurat.obj.final, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+```
+
+# save this final object for annotation 
+
+``` {r}
+saveRDS(seurat.obj.final, file = "seurat.obj.final.RDS")
+``` 
+
+# Session information 
+
+``` {r}
+sessionInfo()
+
+``` 
+
+

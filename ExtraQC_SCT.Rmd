@@ -1,0 +1,175 @@
+---
+title: "Clustering"
+date: "2023-11-15"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+# Objective 
+
+1- Performing extra QC by regressing out cell cycle phase S and G2/M and normalize using SCTransform
+
+2- Integration with harmony and clustering 
+
+# library
+``` {r, warning= FALSE, fig.width= 6, fig.height= 6}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+```
+
+``` {r}
+#==================================================================================================
+library(remotes)
+# Replace 'X.X.X' with your desired version
+remotes::install_version(package = 'Seurat', version = package_version('4.0.3'))
+#==================================================================================================
+
+``` {r}
+p_164S<- readRDS("Singlet.164S.RDS")
+p_164S2<- readRDS("Singlet.164S2.RDS")
+p_184S2<- readRDS("Singlet.184S2.RDS")
+p_184S3<- readRDS("Singlet.184S3.RDS")
+p_218S<- readRDS("Singlet.218S.RDS")
+p_218S2<- readRDS("Singlet.218S2.RDS")
+p_SA5<- readRDS("Singlet.SA5.RDS")
+p_SA6<- readRDS("Singlet.SA6.RDS")
+p_SA7<- readRDS("Singlet.SA7.RDS")
+
+#remove unsed object to reduce memory
+rm(p_164S, p_164S2, p_184S2, p_184S3, p_218S, p_218S2, p_SA5, p_SA6, p_SA7)
+
+#merge seurat objects
+Arthritis.merge<- merge(p_164S, y=c(p_164S2, p_184S2, p_184S3, p_218S, p_218S2, p_SA5, p_SA6, p_SA7))
+
+#Remove merged object
+rm(Arthritis.merge)
+``` 
+
+# Read merged seurat object
+
+``` {r}
+Arthritis.merge<- readRDS("Arthritis.merge.SC.RDS")
+``` 
+
+# Feature-Feature relationship
+
+``` {r, fig.width= 10, fig.height= 5}
+#Visualize feature-feature relationship 
+plot1 <- FeatureScatter(Arthritis.merge, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+plot2 <- FeatureScatter(Arthritis.merge, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident") +
+ theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+
+#comined plots 
+pp<- plot1|plot2 
+```
+
+
+# SCTransform and regress out cell cycle score
+
+``` {r, fig.width= 7, fig.height= 4, warning= FALSE}
+
+#First round of SCT
+Arthritis<- SCTransform(Arthritis.merge, 
+                        assay = "RNA", 
+                        new.assay.name = "SCT" , 
+                        vars.to.regress = c("percent.mt", "nFeature_RNA", "nCount_RNA"), 
+                        verbose = FALSE)
+
+#Cell cycle score 
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+Arthritis<- CellCycleScoring(
+  Arthritis,
+  s.features = s.genes,
+  g2m.features = g2m.genes,
+  assay = 'SCT',
+  set.ident = TRUE
+  )
+
+# normalise again but this time including also the cell cycle scores
+Arthritis<- SCTransform(
+  Arthritis,
+  assay = 'RNA',
+  new.assay.name = 'SCT',
+  vars.to.regress = c('percent.mt', 'nFeature_RNA', 'nCount_RNA', 'S.Score', 'G2M.Score')
+  )
+
+# PCA
+Arthritis <- RunPCA(Arthritis, seed.use = 12345,verbose = FALSE, assay = "SCT", npcs = 50)
+
+
+#Plot PC components ! 
+ElbowPlot(Arthritis, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Integration using Harmony
+
+``` {r, fig.width= 5, fig.height= 4}
+library(harmony)
+
+#run Harmony integration
+Arthritis.integration<- RunHarmony(Arthritis, group.by.vars = "orig.ident")
+Arthritis.integration<- RunUMAP(object = Arthritis.integration, 
+                                reduction = "harmony", 
+                                dims = 1:40, 
+                                min.dist = 0.2, spread = 2,
+                                seed.use = 12345)
+Arthritis.integration<- FindNeighbors(object = Arthritis.integration, reduction="harmony", dims = 1:40)
+Arthritis.integration<- FindClusters(object = Arthritis.integration, resolution = 0.6, random.seed = 12345)
+
+#plot non-linear dimentionality reduction
+DimPlot(Arthritis.integration, label = TRUE) +
+  theme_void() +
+  NoLegend()
+```
+
+# some feature plots
+## T cell subsets
+``` {r, fig.width= 7, fig.height= 5}
+
+FeaturePlot(Arthritis.integration, features = c("CD3E", "CD8A", "CD4", "FOXP3"), pt.size = 0.2,
+    ncol = 2)
+```
+
+## CD4/Foxp3
+``` {r, fig.width= 9, fig.height= 4}
+FeaturePlot(Arthritis.integration, features = c("CD4", "FOXP3"), pt.size = 0.2,
+    ncol = 2)
+```
+
+## Some common markers 
+
+``` {r, fig.width= 8, fig.height= 9}
+FeaturePlot(Arthritis.integration, features = c("EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "S100A8", "S100A9", "CD8A"), pt.size = 0.2,
+    ncol = 2)
+
+```
+
+``` {r}
+sessionInfo()
+```
+
+
+
+``` {r}
+sessionInfo()
+```
+
+
+
+
+

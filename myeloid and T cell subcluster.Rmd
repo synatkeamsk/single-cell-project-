@@ -1,0 +1,1129 @@
+---
+title: "Subclustering"
+date: "2023-12-21"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+# Objectve 
+
+** Perform subclustering of myeloid and T cell** 
+
+# Load annotated seurat obj
+
+``` {r}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+
+#load seurat obj
+seurat.obj<- readRDS("seurat.obj.final.RDS")
+DimPlot(seurat.obj, reduction = "umap", label = TRUE, label.size = 3.5) +
+  theme_minimal() +
+  NoLegend()
+```
+
+**save umap plots** 
+
+``` {r}
+#library(patchwork)
+pp<- p2 + p1
+ggsave("umap.tiff", plot = pp, height=5, width = 13, units = "in", dpi = 300)
+```
+
+**Select T cell cluster** 
+
+``` {r}
+#subset T cell !
+T.cell.cluster <- subset(seurat.obj, idents = c("0", "2", "3", "4", "7", "9", "11", "12", "13", "14"))
+
+## plot T cell cluster
+DimPlot(T.cell.cluster, reduction = "umap", label = FALSE, label.size = 3) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14), 
+        axis.title= element_text(size = 14, face = "bold"), 
+        axis.text = element_text(size=13, face = "bold"), 
+        axis.text.x = element_text(angle = 90, vjust = 0.1)) +
+  labs(y= "UMAP__2", x= "UMAP__1") + NoAxes()
+``` 
+
+**clean up the debris (First round)**
+``` {r}
+T.subcluster.plot<- DimPlot(T.cell.cluster, reduction= "umap", label = TRUE) +
+ theme_minimal() +
+  NoLegend()
+seurat.T.cluster<- CellSelector(plot = T.subcluster.plot, T.cell.cluster)
+
+DimPlot(seurat.T.cluster, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+**Select cell again**
+``` {r}
+T.cell.cluster <- subset(seurat.T.cluster, idents = c("0", "2", "3", "4", "7", "9", "11", "12", "13", "14"))
+DimPlot(T.cell.cluster)
+``` 
+
+**clean up the debris (Second round)**
+``` {r}
+T.subcluster.plot<- DimPlot(T.cell.cluster, reduction= "umap", label = TRUE) +
+ theme_minimal() +
+  NoLegend()
+seurat.T.cluster<- CellSelector(plot = T.subcluster.plot, T.cell.cluster)
+
+DimPlot(seurat.T.cluster, reduction= "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+**Final subcluster** 
+
+``` {r}
+T.cell.cluster <- subset(seurat.T.cluster, idents = c("0", "2", "3", "4", "7", "9", "11", "12", "13", "14"))
+t.sub<- DimPlot(T.cell.cluster, label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  ggtitle("subset all CD3 clusters") +
+  theme(plot.title = element_text(hjust = 0.5))
+t.sub
+``` 
+``` {r}
+ggsave("subset.cd3.tiff", plot = t.sub, height=4, width = 5, units = "in", dpi = 300 )
+``` 
+
+#save T cell subcluster obj
+
+``` {r}
+saveRDS(T.cell.cluster, file = "subset.T.rds")
+```
+
+# Run SCT again 
+
+``` {r}
+#SCTransform
+T.subcluster<- SCTransform(T.cell.cluster, 
+                         method= "glmGamPoi")
+
+#Run PCA
+T.subcluster<- RunPCA(T.subcluster, verbose = FALSE)
+
+saveRDS(T.subcluster, file = "T.subcluster.sct.pca.rds")  #save on 01/31/2024
+
+#Elbow plot
+T.subcluster<- read_rds("T.subcluster.sct.pca.rds")
+
+ElbowPlot(T.subcluster, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+
+# Integration (Harmony) and clustering 
+
+``` {r}
+library(harmony)
+T.cell.integration<- RunHarmony(T.subcluster,
+                              group.by.vars = "orig.ident")
+saveRDS(T.cell.integration, file = "T.cell.harmony.rds")   #save on 01/31/2024
+```
+
+# PC= 10
+``` {r}
+sub.cluster.T.pc10 <- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:10)
+
+sub.cluster.T.pc10 <- FindClusters(sub.cluster.T.pc10 ,
+                                 resolution = 0.78)
+
+sub.cluster.T.pc10 <- RunUMAP(object = sub.cluster.T.pc10 ,
+                          reduction = "harmony",
+                          dims = 1:10)
+
+#save seurat object 
+saveRDS(sub.cluster.T.pc15.res, file = "umap.obj.pc15.rds")
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+DimPlot(sub.cluster.T.pc10, reduction= "umap", label = TRUE, sizes.highlight = 10) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() + 
+  ggtitle("PC= 15") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```  
+
+
+
+``` {r, fig.width= 7, fig.height= 8}
+FeaturePlot(sub.cluster.T.pc10, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+```
+
+
+
+
+# PC= 15
+``` {r}
+sub.cluster.T.pc15<- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:15)
+
+sub.cluster.T.pc15<- FindClusters(sub.cluster.T.pc15,
+                                 resolution = 0.6)
+
+sub.cluster.T.pc15<- RunUMAP(object = sub.cluster.T.pc15,
+                          reduction = "harmony",
+                          dims = 1:15)
+
+#save seurat object 
+saveRDS(sub.cluster.T, file = "umap.obj.pc15.rds")
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+DimPlot(sub.cluster.T.pc15, reduction= "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() + 
+  ggtitle("PC= 15") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+``` 
+``` {r}
+ggsave("umap.pc15.tiff", plot = pc15, height=5, width = 5.5, units = "in", dpi = 300)
+
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feat<- FeaturePlot(sub.cluster.T.pc15, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feat
+```
+
+``` {r}
+ggsave("feature.pc15.tiff", plot = feat, height= 7, width = 6, units = "in", dpi = 300)
+``` 
+
+# PC= 15
+``` {r}
+sub.cluster.T.pc15.res <- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:15)
+
+sub.cluster.T.pc15.res<- FindClusters(sub.cluster.T.pc15.res,
+                                 resolution = 0.78)
+
+sub.cluster.T.pc15.res<- RunUMAP(object = sub.cluster.T.pc15.res,
+                          reduction = "harmony",
+                          dims = 1:15)
+
+#save seurat object 
+saveRDS(sub.cluster.T.pc15.res, file = "umap.obj.pc15.rds")  #save on 01/31/2024 ==
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+umap.pc15<- DimPlot(sub.cluster.T.pc15.res, reduction= "umap", label = TRUE, sizes.highlight = 10) +
+  theme_minimal() +
+  NoLegend() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+umap.pc15
+```  
+
+``` {r}
+ggsave("umap.pc15.tiff", plot = umap.pc15, height=4, width = 5.5, units = "in", dpi = 300)
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feature15<- FeaturePlot(sub.cluster.T.pc15.res, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feature15
+```
+
+``` {r}
+ggsave("feature.pc15.tiff", plot = feature15, height= 7, width = 6, units = "in", dpi = 300)
+
+```
+
+# Marker plots (Violen plot)
+``` {r,  fig.width= 7.5, fig.height= 5.5}
+features <- c("CD3E", "CD3D", "CD4", "CCR7", "CD69", "CXCR3", "CXCR5", "CXCR6", "CCR4", "CCR6", "KLRB1", "IL2RA", "FOXP3", "CD8A", "IL7R", "KLRG1", "CXCL13", "TOX", "LAG3", "CTLA4", "PDCD1", "HAVCR2", "TIGIT", "EOMES", "CX3CR1", "MKI67", "TRGV9", 
+              "TRGV2", "FCGR3A", "NCAM1")
+
+T.sub.violen<- VlnPlot(sub.cluster.T.pc15.res, features = features, stack = TRUE, flip = TRUE) + 
+  theme(legend.position = "none") + 
+  RotatedAxis()
+```
+
+#save this plot 
+
+``` {r}
+ggsave("T.sub.violen.tiff", plot = T.sub.violen, height=5, width = 6, units = "in", dpi = 300)
+
+```
+
+**Dotplot of cytokines** 
+``` {r, fig.width= 9, fig.height= 4}
+Idents(sub.cluster.T.pc15.res) <- factor(Idents(sub.cluster.T.pc15.res), levels = c("0", "1","2", "3", "4", "5", "6", "7",
+                                                                  "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18"))
+genes <- c("CD3E", "CD3D", "CD4", "CD8A", "IFNG", "IL4", "IL10", "IL17A", "IL21", "TNF", "GZMB", "GZMM", "GZMH", 
+           "GZMK", "GNLY", "CSF2", "PRF1", "FOXP3")
+
+# plot dotplot
+T.sub.dotplot<- DotPlot(sub.cluster.T.pc15.res, features = genes, cols = c("blue", "red"), dot.scale = 5) +
+  theme_bw() + 
+  coord_flip() +
+  RotatedAxis() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=15), 
+        axis.title= element_text(size = 14, face = "bold"), 
+        axis.text = element_text(size=10, face = "bold"), 
+        axis.text.x = element_text()) + labs(y= "Cluster Identity")
+``` 
+
+#save this dotplot 
+``` {r}
+ggsave("T.sub.cytokines.tiff", plot = T.sub.dotplot, height=4, width = 8, units = "in", dpi = 300)
+``` 
+
+
+
+
+# compute differentially expressed genes! 
+``` {r}
+file.path<- "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis"
+dir.create("deg.sct.Tcell.subcluster")
+``` 
+
+**find deg of cluster 0**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+prepsct<- PrepSCTFindMarkers(sub.cluster.T.pc15.res)
+cluster0<- FindMarkers(prepsct,assay = "SCT", ident.1 = 0, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE)
+head(cluster0, n = 20)
+``` 
+
+**order it from highest log2FC to lowest
+``` {r}
+cluster0<- cluster0 %>% arrange(desc(avg_log2FC))
+head(cluster0)
+``` 
+
+Save deg of cluster 0
+
+``` {r}
+write.csv(cluster0, file = "deg.sct.Tcell.subcluster/deg_sct_cluster0.csv")
+```
+
+**find deg of cluster 1**
+
+``` {r}
+compare gene expression of cluster 0 to the rest of the cluster
+cluster1<- FindMarkers(prepsct,assay = "SCT", ident.1 = 1, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster1, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster1<- cluster1 %>% arrange(desc(avg_log2FC))
+write.csv(cluster1, file = "deg.sct.Tcell.subcluster/deg_sct_cluster1.csv")
+```
+
+**find deg of cluster 2**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster2<- FindMarkers(prepsct,assay = "SCT", ident.1 = 2, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster2, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster2<- cluster2 %>% arrange(desc(avg_log2FC))
+write.csv(cluster2, file = "deg.sct.Tcell.subcluster/deg_sct_cluster2.csv")
+```
+
+**find deg of cluster 3**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster3<- FindMarkers(prepsct,assay = "SCT", ident.1 = 3, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster3, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster3<- cluster3 %>% arrange(desc(avg_log2FC))
+write.csv(cluster3, file = "deg.sct.Tcell.subcluster/deg_sct_cluster3.csv")
+```
+
+**find deg of cluster 4**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster4<- FindMarkers(prepsct,assay = "SCT", ident.1 = 4, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster4, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster4<- cluster4 %>% arrange(desc(avg_log2FC))
+write.csv(cluster4, file = "deg.sct.Tcell.subcluster/deg_sct_cluster4.csv")
+```
+
+**find deg of cluster 5**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster5<- FindMarkers(prepsct,assay = "SCT", ident.1 = 5, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster5, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster5<- cluster5 %>% arrange(desc(avg_log2FC))
+write.csv(cluster5, file = "deg.sct.Tcell.subcluster/deg_sct_cluster5.csv")
+```
+
+**find deg of cluster 6**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster6<- FindMarkers(prepsct,assay = "SCT", ident.1 = 6, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster6, n = 20)
+``` 
+
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster6<- cluster6 %>% arrange(desc(avg_log2FC))
+write.csv(cluster6, file = "deg.sct.Tcell.subcluster/deg_sct_cluster6.csv")
+```
+
+**find deg of cluster 7**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster7<- FindMarkers(prepsct, assay = "SCT", ident.1 = 7, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster7, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster7<- cluster7 %>% arrange(desc(avg_log2FC))
+write.csv(cluster7, file = "deg.sct.Tcell.subcluster/deg_sct_cluster7.csv")
+```
+
+**find deg of cluster 8**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster8<- FindMarkers(prepsct, assay = "SCT", ident.1 = 8, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster8, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster8<- cluster8 %>% arrange(desc(avg_log2FC))
+write.csv(cluster8, file = "deg.sct.Tcell.subcluster/deg_sct_cluster8.csv")
+```
+
+**find deg of cluster 9**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster9<- FindMarkers(prepsct, assay = "SCT", ident.1 = 9, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster9, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster9<- cluster9 %>% arrange(desc(avg_log2FC))
+write.csv(cluster9, file = "deg.sct.Tcell.subcluster/deg_sct_cluster9.csv")
+```
+
+**find deg of cluster 10**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster10<- FindMarkers(prepsct, assay = "SCT", ident.1 = 10, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster10, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster10<- cluster10 %>% arrange(desc(avg_log2FC))
+write.csv(cluster10, file = "deg.sct.Tcell.subcluster/deg_sct_cluster10.csv")
+```
+
+**find deg of cluster 11**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster11<- FindMarkers(prepsct, assay = "SCT", ident.1 = 11, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster11, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster11<- cluster11 %>% arrange(desc(avg_log2FC))
+write.csv(cluster11, file = "deg.sct.Tcell.subcluster/deg_sct_cluster11.csv")
+```
+
+**find deg of cluster 12**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster12<- FindMarkers(prepsct, assay = "SCT", ident.1 = 12, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster12, n = 20)
+``` 
+``` {r}
+# order it from highest log2FC to lowest
+cluster12<- cluster12 %>% arrange(desc(avg_log2FC))
+write.csv(cluster12, file = "deg.sct.Tcell.subcluster/deg_sct_cluster12.csv")
+```
+
+**find deg of cluster 13**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster13<- FindMarkers(prepsct, assay = "SCT", ident.1 = 13, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster13, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster13<- cluster13 %>% arrange(desc(avg_log2FC))
+write.csv(cluster13, file = "deg.sct.Tcell.subcluster/deg_sct_cluster13.csv")
+```
+
+**find deg of cluster 14**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster14<- FindMarkers(prepsct, assay = "SCT", ident.1 = 14, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster14, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster14<- cluster14 %>% arrange(desc(avg_log2FC))
+write.csv(cluster14, file = "deg.sct.Tcell.subcluster/deg_sct_cluster14.csv")
+``` 
+
+**find deg of cluster 15**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster15<- FindMarkers(prepsct, assay = "SCT", ident.1 = 15, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster15, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster15<- cluster15 %>% arrange(desc(avg_log2FC))
+write.csv(cluster15, file = "deg.sct.Tcell.subcluster/deg_sct_cluster15.csv")
+``` 
+
+**find deg of cluster 16**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster16<- FindMarkers(prepsct, assay = "SCT", ident.1 = 16, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster16, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster16<- cluster16 %>% arrange(desc(avg_log2FC)) 
+write.csv(cluster16, file = "deg.sct.Tcell.subcluster/deg_sct_cluster16.csv")
+``` 
+
+**find deg of cluster 17**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster17<- FindMarkers(prepsct, assay = "SCT", ident.1 = 17, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster17, n = 20)
+``` 
+
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster17<- cluster17 %>% arrange(desc(avg_log2FC))
+write.csv(cluster17, file = "deg.sct.Tcell.subcluster/deg_sct_cluster17.csv")
+``` 
+
+**find deg of cluster 18**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster18<- FindMarkers(prepsct, assay = "SCT", ident.1 = 18, min.pct = 0.25, logfc.threshold = 0.25,only.pos = TRUE, verbose = FALSE)
+head(cluster18, n = 20)
+``` 
+
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster18<- cluster18 %>% arrange(desc(avg_log2FC))
+write.csv(cluster18, file = "deg.sct.Tcell.subcluster/deg_sct_cluster18.csv")
+``` 
+
+**find deg of cluster 19**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster19<- FindMarkers(prepsct, assay = "SCT", ident.1 = 19, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster19, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster19<- cluster19 %>% arrange(desc(avg_log2FC))
+write.csv(cluster19, file = "deg.sct/deg_sct_cluster19.csv")
+``` 
+
+**find deg of cluster 20**
+
+``` {r}
+#compare gene expression of cluster 0 to the rest of the cluster
+cluster20<- FindMarkers(prepsct, assay = "SCT", ident.1 = 20, min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE, verbose = FALSE)
+head(cluster20, n = 20)
+``` 
+
+``` {r}
+# order it from highest log2FC to lowest
+cluster20<- cluster20 %>% arrange(desc(avg_log2FC))
+write.csv(cluster20, file = "deg.sct/deg_sct_cluster20.csv")
+``` 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+``` {r}
+ggsave("umap.pc15.r08.tiff", plot = pc15, height=4, width = 5, units = "in", dpi = 300)
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feata<- FeaturePlot(sub.cluster.T.pc15, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feata
+```
+``` {r}
+ggsave("feature.pc15r.tiff", plot = feata, height= 7, width = 6, units = "in", dpi = 300)
+
+``` 
+
+
+# Run differentially expressed gene on umap
+
+``` {r}
+
+
+
+``` 
+
+
+
+
+# Testing PC= 20 
+``` {r}
+sub.cluster.pc20<- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:20)
+
+sub.cluster.pc20<- FindClusters(sub.cluster.pc20,
+                                 resolution = 0.6)
+
+sub.cluster.pc20<- RunUMAP(object = sub.cluster.pc20,
+                          reduction = "harmony",
+                          dims = 1:20)
+
+#save seurat object 
+saveRDS(sub.cluster.T, file = "sub.cluster.T.rds")
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+pc20<- DimPlot(sub.cluster.pc20, reduction= "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() + 
+  ggtitle("PC= 20") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+pc20
+```
+``` {r}
+ggsave("umap.pc20.tiff", plot = pc20, height=3.7, width = 5.5, units = "in", dpi = 300)
+
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feat2<- FeaturePlot(sub.cluster.pc20, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feat2
+```
+
+``` {r}
+ggsave("feature.pc20.tiff", plot = feat2, height= 7, width = 6, units = "in", dpi = 300)
+``` 
+
+
+# Testing PC= 25
+``` {r}
+sub.cluster.pc25<- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:25)
+
+sub.cluster.pc25<- FindClusters(sub.cluster.pc25,
+                                 resolution = 0.6)
+
+sub.cluster.pc25<- RunUMAP(object = sub.cluster.pc25,
+                          reduction = "harmony",
+                          dims = 1:25)
+
+#save seurat object 
+saveRDS(sub.cluster.T, file = "sub.cluster.T.rds")
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+pc25<- DimPlot(sub.cluster.pc25, reduction= "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() + 
+  ggtitle("PC= 25") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+``` {r}
+ggsave("umap.pc25.tiff", plot = pc25, height=3.7, width = 5.5, units = "in", dpi = 300)
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feat3<- FeaturePlot(sub.cluster.pc25, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feat3
+```
+``` {r}
+ggsave("feature.pc25.tiff", plot = feat3, height= 7, width = 6, units = "in", dpi = 300)
+``` 
+
+
+
+# Testing PC= 30
+``` {r}
+sub.cluster.pc30<- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:30)
+
+sub.cluster.pc30<- FindClusters(sub.cluster.pc30,
+                                 resolution = 0.6)
+
+sub.cluster.pc30<- RunUMAP(object = sub.cluster.pc30,
+                          reduction = "harmony",
+                          dims = 1:30)
+
+#save seurat object 
+saveRDS(sub.cluster.T, file = "sub.cluster.T.rds")
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+pc30<- DimPlot(sub.cluster.pc30, reduction= "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() + 
+  ggtitle("PC= 30") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+pc30
+```
+``` {r}
+ggsave("umap.pc30.tiff", plot = pc30, height=3.7, width = 5.5, units = "in", dpi = 300)
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feat4<- FeaturePlot(sub.cluster.pc30, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feat4
+```
+``` {r}
+ggsave("feature.pc30.tiff", plot = feat4, height= 7, width = 6, units = "in", dpi = 300)
+``` 
+
+
+# Testing PC= 35
+``` {r}
+sub.cluster.pc35<- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:35)
+
+sub.cluster.pc35<- FindClusters(sub.cluster.pc35,
+                                 resolution = 0.6)
+
+sub.cluster.pc35<- RunUMAP(object = sub.cluster.pc35,
+                          reduction = "harmony",
+                          dims = 1:35)
+
+#save seurat object 
+saveRDS(sub.cluster.T, file = "sub.cluster.T.rds")
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+pc35<- DimPlot(sub.cluster.pc35, reduction= "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() + 
+  ggtitle("PC= 35") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+pc35
+```
+``` {r}
+ggsave("umap.pc35.tiff", plot = pc35, height=3.7, width = 5.5, units = "in", dpi = 300)
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feat5<- FeaturePlot(sub.cluster.pc35, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feat5
+```
+``` {r}
+ggsave("feature.pc35.tiff", plot = feat5, height= 7, width = 6, units = "in", dpi = 300)
+```
+
+
+# Testing PC= 40
+``` {r}
+sub.cluster.pc40<- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:40)
+
+sub.cluster.pc40<- FindClusters(sub.cluster.pc40,
+                                 resolution = 0.6)
+
+sub.cluster.pc40<- RunUMAP(object = sub.cluster.pc40,
+                          reduction = "harmony",
+                          dims = 1:40)
+
+#save seurat object 
+saveRDS(sub.cluster.T, file = "sub.cluster.T.rds")
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+DimPlot(sub.cluster.pc40, reduction= "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() + 
+  ggtitle("PC= 40") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+``` {r}
+ggsave("umap.pc40.tiff", plot = pc40, height=3.7, width = 5.5, units = "in", dpi = 300)
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feat6<- FeaturePlot(sub.cluster.pc40, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feat6
+```
+``` {r}
+ggsave("feature.pc40.tiff", plot = feat6, height= 7, width = 6, units = "in", dpi = 300)
+```
+# Testing PC= 45
+``` {r}
+sub.cluster.pc45<- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                               dims = 1:45)
+
+sub.cluster.pc45<- FindClusters(sub.cluster.pc45,
+                                 resolution = 0.6)
+
+sub.cluster.pc45<- RunUMAP(object = sub.cluster.pc45,
+                          reduction = "harmony",
+                          dims = 1:45)
+
+#save seurat object 
+saveRDS(sub.cluster.T, file = "sub.cluster.T.rds")
+
+#plot umap 
+sub.cluster.T<- read_rds("sub.cluster.T.rds")
+
+#umap plot 
+pc45<- DimPlot(sub.cluster.pc45, reduction= "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() + 
+  ggtitle("PC= 45") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+pc45
+```
+``` {r}
+ggsave("umap.pc45.tiff", plot = pc45, height=3.7, width = 5.5, units = "in", dpi = 300)
+``` 
+
+
+``` {r, fig.width= 7, fig.height= 8}
+feat7<- FeaturePlot(sub.cluster.pc45, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19", "NCAM1" ), pt.size = 0.2,
+    ncol = 2)
+feat7
+```
+
+``` {r}
+ggsave("feature.pc45.tiff", plot = feat7, height= 7, width = 6, units = "in", dpi = 300)
+```
+
+
+# Write a for loop to test various dimension 
+
+``` {r}
+
+# Specify the dimensions to test
+dimension_ranges <- list(1:15, 1:20, 1:25, 1:30, 1:35)
+
+# Initialize an empty list to store the results
+result_list <- list()
+
+# Loop through different dimension ranges
+for (dims_range in dimension_ranges) {
+  
+  # FindNeighbors
+  sub.cluster.T <- FindNeighbors(T.cell.integration, 
+                                 reduction = "harmony", 
+                                 dims = dims_range)
+  
+  # FindClusters
+  sub.cluster.T <- FindClusters(sub.cluster.T,
+                                resolution = 0.6)
+  
+  # RunUMAP
+  sub.cluster.T <- RunUMAP(object = sub.cluster.T,
+                           reduction = "harmony",
+                           dims = dims_range)
+  
+  # Save Seurat object
+  saveRDS(sub.cluster.T, file = paste0("sub.cluster.T_dims_", max(dims_range), ".rds"))
+  
+  # Store the result in the list
+  result_list[[paste0("dims_", max(dims_range))]] <- sub.cluster.T
+}
+
+# Plot UMAP for each dimension
+for (result in result_list) {
+  DimPlot(result, reduction = "umap", label = TRUE) +
+    theme_minimal() +
+    NoLegend() +
+    NoAxes() + 
+    ggtitle(paste("PC =", max(result@reductions$harmony$dimnames[[1]]))) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+}
+
+``` 
+
+
+
+
+
+
+
+
+
+``` {r}
+tsub.clus<- t.sub/subcluster
+ggsave("subcluster.tiff", plot = subcluster, height=4, width = 5, units = "in", dpi = 300 )
+```
+
+
+``` {r, fig.width= 8, fig.height= 15 }
+FeaturePlot(sub.cluster.T, features = c("CD8A", "CD4", "CD3E", "TBX21", "RORC", "CCR6", "CXCR3", "GATA3", "CTLA4", "FOXP3", "ICOS", 
+                                            "CXCR5", "CXCL13", "PDCD1", "MKI67", "NCAM1", "LEF1"), pt.size = 0.2, ncol = 2)
+``` 
+
+``` {r}
+FeaturePlot(sub.cluster.T, features = c("CD3D","NCAM1", "CD8A"), 
+            pt.size = 0.2, ncol = 2)
+``` 
+
+
+# Subcluster for myeloid cells 
+
+**load seurat obj**
+``` {r}
+DimPlot(seurat.obj, reduction = "umap", label = TRUE, label.size = 3.5) + 
+  theme_bw() +
+  NoLegend()
+``` 
+
+
+**Select myeloid cell cluster** 
+
+``` {r}
+#subset T cell !
+myeloid.cell.cluster <- subset(seurat.obj, idents = c("pDC", "CDC2", "mDC", "mDC.", "Macrophage", "Neutrophil", "Monocyte", 
+                                                      "mono/macrophage", "CD1C"))
+
+## plot T cell cluster
+DimPlot(myeloid.cell.cluster, reduction = "umap", label = FALSE, label.size = 3) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14), 
+        axis.title= element_text(size = 14, face = "bold"), 
+        axis.text = element_text(size=13, face = "bold"), 
+        axis.text.x = element_text(angle = 90, vjust = 0.1)) +
+  labs(y= "UMAP__2", x= "UMAP__1") + NoAxes()
+``` 
+
+clean up the debris (First round)
+``` {r}
+#myeloid.subcluster.plot<- DimPlot(myeloid.cell.cluster, reduction= "umap", label = TRUE) +
+ # theme_minimal() +
+  #NoLegend()
+#seurat.myeloid.cluster<- CellSelector(plot = myeloid.subcluster.plot, myeloid.cell.cluster)
+
+#DimPlot(seurat.myeloid.cluster, reduction= "umap", label = TRUE) +
+#  theme_minimal() +
+ # NoLegend()
+``` 
+
+**Select cell again**
+
+``` {r}
+#myeloid.cell.cluster <- subset(seurat.myeloid.cluster, idents = c("pDC", "CDC2", "mDC", "mDC.", "Macrophage", "Neutrophil", "Monocyte", 
+                                                      #"mono/macrophage", "CD1C"))
+
+#dimplot 
+#meyloid.sub<- DimPlot(myeloid.cell.cluster, label = TRUE) +
+ # theme_void() +
+  #ggtitle("myeloid cell subcluster") + 
+  #theme(plot.title = element_text(hjust = 0.5)) +
+  #NoLegend()
+``` 
+``` {r}
+#ggsave("subset.myeloid.tiff", plot = meyloid.sub, height=4, width = 5, units = "in", dpi = 300 )
+``` 
+
+# Run SCT again for myeloid cells 
+
+``` {r}
+#SCTransform
+#myeloid.subcluster<- SCTransform(myeloid.cell.cluster, 
+ #                          method= "glmGamPoi",
+  #                         verbose = FALSE)
+
+#Run PCA
+#myeloid.subcluster<- RunPCA(myeloid.subcluster, verbose = FALSE)
+
+#saveRDS(myeloid.subcluster, file = "myeloid.sct.pca.rds")
+
+#Elbow plot
+myeloid.subcluster<- read_rds("myeloid.sct.pca.rds")
+ElbowPlot(myeloid.subcluster, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+
+# Integration/harmony and clustering 
+
+``` {r}
+#library(harmony)
+#myeloi.cell.integration<- RunHarmony(myeloid.subcluster,
+ #                               group.by.vars = "orig.ident")
+#save rds file 
+#saveRDS(myeloi.cell.integration, file = "myeloid.integration.rds")
+
+#sub.cluster.myeloid<- FindNeighbors(myeloi.cell.integration, 
+    #                              reduction = "harmony", 
+     #                             dims = 1:45)
+
+#sub.cluster.myeloid<- FindClusters(sub.cluster.myeloid,
+ #                                resolution = 0.3)
+
+#sub.cluster.myeloid<- RunUMAP(object = sub.cluster.myeloid,
+     #                     reduction = "harmony",
+      #                    dims = 1:45, 
+       #                   spread = 2.5)
+
+#save seurat object 
+#saveRDS(sub.cluster.myeloid, file = "myeloid.subcluster.rds")
+
+sub.cluster.myeloid<- read_rds("myeloid.subcluster.rds")
+DimPlot(sub.cluster.myeloid, label = TRUE) + 
+  theme_minimal()
+``` 
+
+#plot umap 
+``` {r}
+DimPlot(sub.cluster.myeloid, reduction= "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  NoAxes() +
+  ggtitle("myeloid cell subcluster") + 
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+``` 
+
+
+
+``` {r}
+
+ggsave("myeloid.sublcuster.tiff", plot = myeloid, height=4.5, width = 6, units = "in", dpi = 300 )
+```
+
+
+
+
+
+
+
+
+# Session information
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+

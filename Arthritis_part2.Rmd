@@ -1,0 +1,1119 @@
+---
+title: "Athritis_part2"
+output: html_document
+date: "2023-10-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Ojectives 
+1. Perform annotation 
+2. Calculate cell proportion 
+
+
+``` {r, fig.width= 10, fig.height= 4, align="center"}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+set.seed(198752)
+
+#read the filtered cell object from part 1
+Filtered_cell<- readRDS("Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/Filtered.RDS")
+``` 
+
+
+#Dimplot
+``` {r, fig.width= 10, fig.height= 4}
+umap1<- DimPlot(Filtered_cell, reduction = "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  ggtitle("All samples") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+umap2<- DimPlot(Filtered_cell, reduction = "umap", group.by = "type", label = FALSE) +
+  ggtitle("All samples") +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+umap1|umap2
+``` 
+
+## Feature plots
+``` {r, fig.width= 12, fig.height= 9}
+FeaturePlot(Filtered_cell, features = c("PTPRC", "CD3E", "CD4", "CD8A", "GNLY", "FOXP3",
+                                            "SPARC", "CD68", "CD1C", "CD14", 
+                                            "C1QA", "NCAM1", "STMN1", "CD19", "FCGR3A", "IL3RA"), 
+            label = TRUE, label.size = 2)
+``` 
+
+## Investigate Neutrophil popluation 
+
+**General Markers** for human neutrophil include CD66b (CEACAM8), CD16 (FCGR3A), CD11b (ITGAM), D15 (FUT4), CD62L (SELL), CD177 (NB1), CXCR2, LYZ (Lysozyme),  DEFA3
+
+``` {r, fig.width= 8, fig.height= 9}
+FeaturePlot(Filtered_cell, features = c("PTPRC", "CEACAM8", "FCGR3A", "ITGAM", "FUT4", "CXCR2"))
+``` 
+
+## Investigate monocyte popluation 
+
+**General Markers** for human monocytes/macrophage include CD14, CD16 (FCGR3A), CD68, CSF1R (CD115), CX3CR1, CD163, CD11b (ITGAM), S100A8 and S100A9, HLA-DR
+
+``` {r, fig.width= 12, fig.height= 9}
+FeaturePlot(Filtered_cell, features = c("CD14", "FCGR3A", "CD68", "CX3CR1", "CD163", "ITGAM", "S100A8", "S100A8", "S100A9"), ncol = 3)
+``` 
+
+## Investigate basophil popluation 
+
+**General Markers** for human basophil include CD203c (ENPP3), CMA1, CD123 (IL3RA), MS4A2 (FcεRI)
+
+``` {r, fig.width= 10, fig.height= 3}
+FeaturePlot(Filtered_cell, features = c("PTPRC", "ENPP3", "IL3RA"), ncol = 3)
+``` 
+
+# Investigate Dendritic cell popluation 
+
+**General Markers** for human pDC include CD11c (ITGAX), CD141 (BDCA-3), CD1c (BDCA-1), IRF4 (Interferon Regulatory Factor 4), CLEC9A (DNGR-1)
+
+CD11c (ITGAX): CD11c is a common marker for cDCs and is often used to distinguish them from other immune cell types.
+CLEC9A (DNGR-1): CLEC9A is expressed in cDC1 and is involved in the recognition of dead cell-associated antigens.
+
+``` {r, fig.width= 7, fig.height= 6}
+FeaturePlot(Filtered_cell, features = c("PTPRC", "ITGAX", "CD1C", "CLEC9A"))
+``` 
+
+## Investigate pDC popluation 
+
+**General Markers** for human pDC include CD123 (IL3RA), IRF7 (Interferon Regulatory Factor 7), LILRA4 (Leukocyte Immunoglobulin-Like Receptor A4)
+
+-CD123 (IL3RA): CD123, the interleukin-3 receptor alpha chain, is highly expressed on the surface of pDCs and is commonly used as a marker for these cells.
+
+-IRF7 (Interferon Regulatory Factor 7): IRF7 is a transcription factor involved in the production of type I interferons, which is a hallmark function of pDCs. High expression of IRF7 is often associated with pDCs.
+
+``` {r, fig.width= 7, fig.height= 6}
+FeaturePlot(Filtered_cell, features = c("PTPRC", "IL3RA", "IRF7", "LILRA4"))
+``` 
+
+## Investigate cluster 0
+
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster0.markers <- FindMarkers(Filtered_cell, ident.1 = 0, min.pct = 0.5,
+                                only.pos = TRUE)
+head(cluster0.markers, n = 20)
+``` 
+
+#save csv file 
+``` {r}
+write.csv(cluster0.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster0.csv")
+```
+
+
+## Cluster 1
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster1.markers <- FindMarkers(Filtered_cell, ident.1 = 1, min.pct = 0.5,
+                                only.pos = TRUE)
+head(cluster1.markers, n = 20)
+``` 
+#save csv file 
+``` {r}
+write.csv(cluster1.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster1.csv")
+``` 
+
+## Investigate cluster 3
+
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster3.markers <- FindMarkers(Filtered_cell, ident.1 = 3, min.pct = 0.5,
+                                only.pos = TRUE)
+head(cluster3.markers, n = 20)
+``` 
+
+#save csv file 
+``` {r}
+write.csv(cluster3.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster3.csv")
+```
+
+## Investigate cluster 5
+
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster5.markers <- FindMarkers(Filtered_cell, ident.1 = 5, min.pct = 0.5,
+                                only.pos = TRUE)
+head(cluster5.markers, n = 20)
+``` 
+
+#save csv file
+``` {r}
+write.csv(cluster5.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster5.csv")
+```
+
+
+## Investigate cluster 6
+
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster6.markers <- FindMarkers(Filtered_cell, ident.1 = 6, min.pct = 0.5,
+                                only.pos = TRUE)
+head(cluster6.markers, n = 20)
+```
+
+
+#write csv file
+``` {r}
+write.csv(cluster6.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster6.csv")
+```
+
+#  Feature plot of cluster 6
+``` {r}
+
+features <- c("PTPRC", "CD3E", "CD3D", "CD4", "CD8A", "TCF7", "IL17A", "NCAM1")
+
+#plot
+VlnPlot(Filtered_cell, features = features, stack = TRUE, flip = TRUE) + 
+  theme(legend.position = "none") + RotatedAxis()
+```
+
+## Investigate cluster 7
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster7.markers <- FindMarkers(Filtered_cell, ident.1 = 7, min.pct = 0.5,
+                                only.pos = TRUE, logfc.threshold = 1)
+head(cluster7.markers, n = 20)
+``` 
+``` {r}
+write.csv(cluster7.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster7.csv")
+```
+
+
+
+## Investigate cluster 8
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster8.markers <- FindMarkers(Filtered_cell, ident.1 = 8, min.pct = 0.5,
+                                only.pos = FALSE)
+head(cluster8.markers, n = 20)
+``` 
+``` {r}
+write.csv(cluster8.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster8.csv")
+```
+
+
+## Investigate cluster 9 
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster9.markers <- FindMarkers(Filtered_cell, ident.1 = 9, min.pct = 0.5,
+                                only.pos = FALSE)
+head(cluster9.markers, n = 20)
+``` 
+``` {r}
+write.csv(cluster9.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster9.csv")
+```
+
+## Investigate cluster 10
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster10.markers <- FindMarkers(Filtered_cell, ident.1 = 10, min.pct = 0.5,
+                                only.pos = FALSE)
+head(cluster10.markers, n = 20)
+``` 
+``` {r}
+write.csv(cluster10.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster10.csv")
+```
+
+
+## Investigate cluster 11
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster11.markers <- FindMarkers(Filtered_cell, ident.1 = 11, min.pct = 0.5,
+                                only.pos = FALSE)
+head(cluster11.markers, n = 20)
+``` 
+
+``` {r}
+write.csv(cluster11.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster11.csv")
+```
+
+
+## Investigate cluster 12
+
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster12.markers <- FindMarkers(Filtered_cell, ident.1 = 12, min.pct = 0.5,
+                                only.pos = TRUE)
+head(cluster11.markers, n = 20)
+``` 
+
+#save csv file 
+``` {r}
+write.csv(cluster12.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster12.csv")
+``` 
+
+## Run expression plot of all clusters
+
+```  {r, fig.width= 6.5, fig.height= 4.7}
+
+features <- c("PTPRC", "CD3E", "CD3D", "CD4", "CD8A", "FOXP3", "SPARC", "CD68", "GNLY", "CD19", "NKG7"
+              , "CD1C", "S100A9", "S100A8", "FCGR3A", "CD14", "SDC1", "CD38", "CD27",
+                     "CX3CR1", "KLRG1", "IL7R", "CCR7", "TRDV2", "MKI67")
+``` 
+#plot
+``` {r}
+VlnPlot(Filtered_cell, features = features, stack = TRUE, flip = TRUE) + 
+  theme(legend.position = "none") + RotatedAxis()
+``` 
+
+## Feature plots of cluster 9 
+
+``` {r, fig.width= 9, fig.height= 4}
+Idents(Filtered_cell) <- factor(Idents(Filtered_cell), levels = c("0", "1","2", "3", "4", "5", "6", "7",
+                                                                  "8", "9", "10", "11", "12", "13", "14", "15"))
+#gene names 
+genes <- c("PTPRC", "CD3E", "CD3D", "CD4", "CD8A", "RRM2","CENPF", "MKI67")
+
+#plot 
+DotPlot(Filtered_cell, features = genes, cols = c("blue", "red"), dot.scale = 8) +
+  theme_bw() + 
+  coord_flip() +
+  RotatedAxis() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=15), 
+        axis.title= element_text(size = 14, face = "bold"), 
+        axis.text = element_text(size=13, face = "bold"), 
+        axis.text.x = element_text()) + labs(y= "Cluster Identity")
+``` 
+
+
+
+## Investigate cluster 14
+
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster14.markers <- FindMarkers(Filtered_cell, ident.1 = 14, min.pct = 0.5,
+                                only.pos = TRUE)
+head(cluster14.markers, n = 20)
+```
+
+#save csv file 
+```{r}
+write.csv(cluster14.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster14.csv")
+``` 
+
+## Investigate cluster 15
+
+``` {r}
+#compare gene expression of cluster 9 to the rest of the cluster
+cluster15.markers <- FindMarkers(Filtered_cell, ident.1 = 15, min.pct = 0.5,
+                                only.pos = TRUE)
+head(cluster15.markers, n = 20)
+``` 
+
+#save csv file 
+
+``` {r}
+write.csv(cluster15.markers, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster15.csv")
+
+``` 
+
+## Perform Annotation 
+
+``` {r, fig.width= 4.5, fig.height= 3.7}
+
+#dimplot 
+DimPlot(Filtered_cell, reduction = "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend() +
+  ggtitle("All samples") +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+
+
+#new annotation label! 
+```{r}
+Athritis_annotation <- RenameIdents(Filtered_cell, `0` ="mono/neutro", `1` ="CD4",
+                              `2` ="CD8", `3` ="cDc2", `4`= "Treg", `5`= "NK & NK T", 
+                              `6`= "γδ T Cells", `7`= "Naive CD4", `8`= "CD16 Mono",
+                              `9`= "Proliferating T", `10`= "pDC", `11`="cDc1", `12`= "Fibroblast", `13`= "B cell", 
+                              `14`= "mDC", `15`= "CD8 effector/memo")
+
+#save this object for subclustering 
+saveRDS(Athritis_annotation, file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/Arthritis_annotation.RDS")
+```
+
+
+## Annotation plot 
+``` {r, fig.width= 5, fig.height= 4}
+DimPlot(Athritis_annotation, reduction = "umap", label = TRUE, label.size = 3) +
+  theme_minimal() +
+  NoLegend() +
+  ggtitle("All samples") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  NoAxes()
+``` 
+
+# Visualize the three group side by side in UMAP
+``` {r, fig.width= 12, fig.height= 4.2}
+DimPlot(Athritis_annotation, reduction = "umap", split.by = "type", ncol = 3, label = TRUE, label.size = 3) +
+  theme_minimal() + theme(plot.title = element_text(face = "bold")) +
+  NoLegend() + NoAxes()
+``` 
+
+# Visualize individual sample side by side in UMAP
+
+``` {r, fig.width= 8, fig.height= 8.5}
+DimPlot(Athritis_annotation, reduction = "umap", split.by = "orig.ident", ncol = 3, label = TRUE, label.size = 2.5)  + 
+  theme_minimal() +
+NoLegend() + NoAxes()
+``` 
+
+# Calculate the proportion of immune cells 
+You can try the following code (make sure to have Seurat loaded, as well as to have the following packages "foreach" and "openxlsx" installed; in addition, change the names where needed - e.g., if your main object is not called "combined", replace "combined" with whatever name you gave that object) - tell me if it worked for you:
+
+``` {r}
+#Cluster frequency for each sample!
+library(data.table)
+library(magrittr)
+
+## extract meta data
+md <- Athritis_annotation@meta.data %>% as.data.table
+md
+# the resulting md object has one "row" per cell
+``` 
+
+
+## count the number of cells per unique combinations of "Sample" and "seurat_clusters"
+``` {r}
+cell<- md[, .N, by = c("orig.ident", "seurat_clusters")]
+cell
+```
+#manually add column of tissue type to cell dataframe 1 
+#oder the column cluster # !
+
+``` {r}
+umap3<- DimPlot(Athritis_annotation, reduction = "umap", label = TRUE, label.size = 3) +
+  theme_bw() +
+  NoLegend() +
+  ggtitle("All samples") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  NoAxes()
+
+umap4<- DimPlot(Filtered_cell, reduction = "umap", label = TRUE) +
+  theme_bw() +
+  NoLegend() +
+  ggtitle("All samples") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  NoAxes()
+
+merge<-umap4 + umap3
+``` 
+
+``` {r}
+ggsave("All_annotated_immune_clusters.tiff", plot = merge, height=4, width = 8, units = "in", dpi = 300)
+
+```
+
+## examine seurat-clusters
+
+``` {r}
+cell<- cell[order(seurat_clusters)]
+
+#manually code cell type and request for 9 repeats for 9 sample! 
+type<- c(rep("mono/neutro", 9), rep("CD4", 9) ,rep("CD8", 9),rep("cDc2", 9), rep("Treg", 9), rep("NK & NK T", 9),
+         rep("γδ T cells", 9), rep("Naive CD4", 8), rep("CD16 Mono", 9), rep("Proliferating T", 9),
+         rep("pDC", 9), rep("cDc1", 9), rep("Fibroblast", 7), rep("B cell", 8), rep("mDC",9), rep("CD8 effector/memo", 4))
+
+#convert to dataframe !
+type<- data.frame(type)
+
+#add type as another column of cell dataframe !
+cell.bind<- cbind(cell, type)
+
+#Create another column by adding total cells of each sample !
+total.cell<- table(Athritis_annotation@meta.data$orig.ident)
+total.cell
+```
+
+# for now write csv file !
+``` {r}
+write.csv(cell.bind, "cell.csv") #edit mannually
+``` 
+
+``` {r}
+#read csv file back in 
+proportion<- read.csv("cell.csv", stringsAsFactors = TRUE)
+
+#calculate cluster frequency! 
+cellf<- proportion %>% mutate(frequency= (N/total_cells)*100)
+cellf
+```
+
+#subset 164S sample !
+
+``` {r }
+library(tidyverse)
+A164S<- cellf %>% filter(patient== "164S")
+A164S$type<- factor(A164S$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+#visualization ! 
+
+imm1<- ggplot(A164S, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "164S")
+imm1
+``` 
+
+
+#subset 164S2 sample !
+
+``` {r}
+A164S2<- cellf %>% filter(patient== "164S2")
+A164S2$type<- factor(A164S2$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+#visualization ! 
+imm2<- ggplot(A164S2, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "164S2")
+imm2
+```
+#subset 184S2 sample !
+
+``` {r}
+A184S2<- cellf %>% filter(patient== "184S2")
+A184S2$type<- factor(A184S2$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+
+#visualization ! 
+imm3<- ggplot(A184S2, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "184S2")
+imm3
+``` 
+
+#subset 184S3 sample !
+
+``` {r}
+A184S3<- cellf %>% filter(patient== "184S3")
+A184S3$type<- factor(A184S3$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+
+#visualization ! 
+imm4<- ggplot(A184S3, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "184S3")
+imm4
+``` 
+
+#subset 218S sample !
+``` {r}
+A218S<- cellf %>% filter(patient== "218S")
+A218S$type<- factor(A218S$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+
+#visualization ! 
+imm5<- ggplot(A218S, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "218S")
+imm5
+``` 
+
+#subset 218S2 sample !
+``` {r}
+A218S2<- cellf %>% filter(patient== "218S2")
+A218S2$type<- factor(A218S2$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+
+#visualization ! 
+imm6<- ggplot(A218S2, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "218S2")
+imm6
+``` 
+
+#subset SA5 sample !
+
+``` {r}
+ASA5<- cellf %>% filter(patient== "SA5")
+ASA5$type<- factor(ASA5$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+
+#visualization ! 
+imm7<- ggplot(ASA5, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "ASA5")
+imm7
+``` 
+
+#subset SA6 sample !
+``` {r}
+ASA6<- cellf %>% filter(patient== "SA6")
+ASA6$type<- factor(ASA6$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+
+#visualization ! 
+imm8<- ggplot(ASA6, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "ASA6")
+imm8
+``` 
+#subset SA7 sample !
+
+``` {r}
+ASA7<- cellf %>% filter(patient== "SA7")
+ASA7$type<- factor(ASA7$type, levels = c("CD4", "CD8", "Naive CD4", "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell", "mono/neutro", "CD16 Mono", 
+                                           "pDC", "cDc1", "cDc2", "mDC", "Fibroblast"))
+
+#visualization ! 
+imm9<- ggplot(ASA7, aes(x= type, y= frequency, fill= type)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "ASA7")
+imm9
+``` 
+#merg all plot 
+
+``` {r, fig.width= 12, fig.height= 9}
+#load patchwork library1
+library(patchwork)
+imm1 +imm2 + imm3 + imm4 + imm5 + imm6 +imm7 + imm8 + imm9
+``` 
+
+
+#subset CD4 sample !
+
+```{r}
+CD4<- cellf %>% filter(type== "CD4")
+CD4$patient<- factor(CD4$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p1<- ggplot(CD4, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size= 8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "CD4")
+p1
+``` 
+ 
+``` {r}
+Naive_CD4<- cellf %>% filter(type== "Naive CD4")
+Naive_CD4$patient<- factor(Naive_CD4$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p2<- ggplot(Naive_CD4, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size= 8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "Naive CD4")
+p2
+``` 
+
+
+#subset CD8 sample !
+
+```{r}
+CD8<- cellf %>% filter(type== "CD8")
+CD8$patient<- factor(CD8$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p3<- ggplot(CD8, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size= 8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "CD8")
+p3
+``` 
+
+
+```{r}
+CD8_effector_memo<- cellf %>% filter(type== "CD8 effector/memo")
+CD8_effector_memo$patient<- factor(CD8_effector_memo$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p4<- ggplot(CD8_effector_memo, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size= 8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "CD8_effector_memo")
+p4
+``` 
+
+
+
+
+#subset Treg sample !
+
+``` {r}
+Treg<- cellf %>% filter(type== "Treg")
+Treg$patient<- factor(Treg$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+#visualization ! 
+p5<- ggplot(Treg, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size =8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "Treg")
+p5
+``` 
+
+
+#subset gamma/delta T cell sample !
+``` {r}
+Gammdelta<- cellf %>% filter(type== "Gamma/delta T")
+Gammdelta$patient<- factor(Gammdelta$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p6<- ggplot(Gammdelta, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size= 8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "gamma/delta T cell")
+p6
+``` 
+
+#subset proliferating T cell sample !
+
+``` {r}
+proli<- cellf %>% filter(type== "Proliferating T")
+proli$patient<- factor(proli$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p7<- ggplot(proli, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size= 8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "Proliferating T cell")
+p7
+``` 
+
+
+#subset NKT cell sample !
+
+``` {r}
+NKT<- cellf %>% filter(type== "NK & NK T")
+NKT$patient<- factor(NKT$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p8<- ggplot(NKT, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size= 8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "NK & NK T")
+p8
+``` 
+
+#subset B cell cell sample !
+
+``` {r}
+B_cell<- cellf %>% filter(type== "B cell")
+B_cell$patient<- factor(B_cell$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p9<- ggplot(B_cell, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size=8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "B cell")
+p9
+``` 
+
+#subset Neutro & Macrophage cell sample !
+
+
+                                          
+``` {r}
+neumacro<- cellf %>% filter(type== "mono/neutro")
+neumacro$patient<- factor(neumacro$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p10<- ggplot(neumacro, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size=8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "monocyte and neutrophil")
+p10
+``` 
+
+#subset Neu_Mono_Mac cell sample !
+
+``` {r}
+CD16Mono<- cellf %>% filter(type== "CD16 Mono")
+CD16Mono$patient<- factor(CD16Mono$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p11<- ggplot(CD16Mono, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size=8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "CD16 Monocyte")
+p11
+``` 
+
+
+#subset pdc cell sample !
+
+``` {r}
+pDC<- cellf %>% filter(type== "pDC")
+pDC$patient<- factor(pDC$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p12<- ggplot(pDC, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size=8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "pDC")
+p12
+``` 
+#subset CD1c/DC cell sample !
+``` {r}
+CD1c<- cellf %>% filter(type== "cDc1")
+CD1c$patient<- factor(CD1c$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p13<-ggplot(CD1c, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size=8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = " Type 1 Dendritic cells")
+p13
+``` 
+#subset "Osteoblast" sample !
+ 
+``` {r}
+cdc2<- cellf %>% filter(type== "cDc2")
+cdc2$patient<- factor(cdc2$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+#visualization ! 
+p14<- ggplot(cdc2, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size=8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "Type 2 Dendritic cells")
+p14
+``` 
+
+
+#subset mdc cell sample !
+
+``` {r}
+mdc<- cellf %>% filter(type== "mDC")
+mdc$patient<- factor(mdc$patient, levels = c("164S", "164S2", "184S2", "184S3", "218S", "218S2", "SA5", "SA6", "SA7"))
+
+
+#visualization ! 
+p15<- ggplot(mdc, aes(x= patient, y= frequency, fill= patient)) +
+  theme_minimal() +
+  geom_bar(stat = "identity", ) +
+  theme(axis.text.x = element_text(angle = 50),
+        axis.title.x  = element_blank(),
+        axis.title.y = element_text(size=8, face = "bold"),
+        axis.text = element_text(size= 6, face = "bold", hjust = 1),
+        plot.title = element_text(hjust = 0.5, face = "bold", size=8)) +
+  theme(legend.position = "none") + 
+  labs(y="Fraction of total cells", title = "myeloid dendritic cell")
+p15
+``` 
+
+
+#merge plot !
+``` {r, fig.width= 7, fig.height= 10}
+p1 + p2 + p3 + p4 + p5 + p6 +
+  p7 +p8 + p9 +p10 + p11 + p12 + p13 + p14 + p15 + 
+   plot_layout(nrow = 5, ncol = 3)
+``` 
+
+# Group analysis 
+# myeloid cell 
+
+``` {r, fig.width= 10, fig.height= 3.5}
+#T and NKT 
+lympho<- cellf %>% filter(type %in% c("CD4", "Naive CD4", "CD8", "Treg", "Gamma/delta T", "Proliferating T", 
+                                      "NK & NK T", "B cell"))
+ggplot(lympho, aes(x= Group, y= frequency, fill= type )) + 
+  theme_minimal() +
+  geom_boxplot() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x  = element_text(angle = 90, hjust = 1, vjust = 0.5, size=10, face = "bold"), 
+        plot.background = element_blank()) +
+  facet_grid(~ type) +
+  geom_jitter(size=2) +
+  theme(legend.position = "none") 
+``` 
+
+                              
+``` {r, fig.width= 10, fig.height= 3.5}
+#Myeloid 
+myeloid<- cellf %>% filter(type %in% c("mono/neutro", "CD16 Mono", "pDC", "cDc1", "cDc2", "Fibroblast"))
+ggplot(myeloid, aes(x= Group, y= frequency, fill= type )) + 
+  theme_minimal() +
+  geom_boxplot() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size=10, face = "bold")) +
+  facet_grid(~ type) +
+  geom_jitter(size=2) +
+  theme(legend.position = "none") 
+``` 
+
+# Identify Conserved and Differentially Expressed Genes Across Conditions between conditions/group (Rucurrent_A, Recurrent_B, Recurrent_C)
+
+``` {r, fig.width= 20, fig.height= 6 }
+Athritis_annotation<- readRDS("Arthritis_annotation.RDS")
+
+view(Athritis_annotation@meta.data)
+Idents(Athritis_annotation)
+
+#add celltype variable 
+Athritis_annotation$celltypes<- Idents(Athritis_annotation)
+view(Athritis_annotation@meta.data)
+
+#add recurrent_celltype variable 
+Athritis_annotation$Recurrent_celltype <- paste(Athritis_annotation$type, sep = "_", Idents(Athritis_annotation))
+view (Athritis_annotation@meta.data)
+#
+Idents(Athritis_annotation) <- "Recurrent_celltype"
+Idents(Athritis_annotation)
+
+#UMAP visualization
+DimPlot(Athritis_annotation, reduction = "umap", label = TRUE, split.by = "type") +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+
+``` {r}
+Treg_RecurrentA_vs_Treg_RecurrentB <- FindMarkers(Athritis_annotation, ident.1 ="Recurrent_A_Treg", ident.2 ="Recurrent_B_Treg", verbose = FALSE)
+head(Treg_RecurrentA_vs_Treg_RecurrentB)
+``` 
+
+#Volcano plot 
+``` {r}
+## Volcano plot @ 1 day 
+
+volcano<- Treg_RecurrentA_vs_Treg_RecurrentB [order(Treg_RecurrentA_vs_Treg_RecurrentB $p_val_adj),]
+
+# create data.frame
+results<- as.data.frame(mutate(as.data.frame(volcano), 
+                                    cut_off=ifelse(volcano$p_val_adj<0.05, "significant", "insignificant")), 
+                             row.names=rownames(volcano))
+## ggplot plus ggrepel
+options(ggrepel.max.overlaps = Inf)
+library(ggrepel)
+volcano$cut_off<- factor(results$cut_off, levels = c('significant', 'insignificant'))
+
+# plot
+ggplot(results, aes(avg_log2FC, -log10(p_val_adj))) + 
+  theme_minimal() +
+  geom_point(aes(col = cut_off)) +
+  scale_color_manual(values = c("black", "red")) +
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"), 
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size=10), 
+        legend.title = element_text(size = 11, face = "bold"), 
+        legend.text = element_text(size = 9)) + 
+  geom_text_repel(data=results[1:30,], 
+                  aes(label=rownames(results[1:30,]))) +
+  ggtitle("Treg of Recurrent.A vs. Recurrent.B") 
+``` 
+``` {r}
+#view metadata
+view(Athritis_annotation)
+
+#mach identity 
+Idents(Athritis_annotation) <- factor(Idents(Athritis_annotation), levels = c("CD4", "CD8", "Naive CD4",
+                                            "CD8 effector/memo", "Gamma/delta T", "Treg", 
+                                           "Proliferating T", "NK & NK T", "B cell"))
+
+## define markers
+markers.to.plot <- c("CD3E","CD3D", "CD4", "CD8A", "FOXP3", "CCR7", "CD69", "CXCR3", "CXCR5", "CXCR6", "CCR4", "CCR6", "KLRB1", "IL2RA", "IL7R", "KLRG1", "CXCL13", "TOX", "LAG3", "CTLA4", "PDCD1", "HAVCR2", "TIGIT", "EOMES", "CX3CR1", "MKI67", "TRGV9", 
+              "TRGV2", "FCGR3A", "NCAM1")
+
+#visualization plot 
+DotPlot(Athritis_annotation, features = rev(markers.to.plot), cols = c("blue", "red", "green"), dot.scale = 8) +
+  RotatedAxis()
+``` 
+
+
+``` {r}
+cd4.cells <- subset(Athritis_annotation, idents = "CD4")
+Idents(t.cells) <- "stim"
+avg.t.cells <- log1p(AverageExpression(t.cells, verbose = FALSE)$RNA)
+avg.t.cells$gene <- rownames(avg.t.cells)
+
+cd14.mono <- subset(immune.combined, idents = "CD14 Mono")
+Idents(cd14.mono) <- "stim"
+avg.cd14.mono <- log1p(AverageExpression(cd14.mono, verbose = FALSE)$RNA)
+avg.cd14.mono$gene <- rownames(avg.cd14.mono)
+
+genes.to.label = c("ISG15", "LY6E", "IFI6", "ISG20", "MX1", "IFIT2", "IFIT1", "CXCL10", "CCL8")
+p1 <- ggplot(avg.t.cells, aes(CTRL, STIM)) + geom_point() + ggtitle("CD4 Naive T Cells")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p2 <- ggplot(avg.cd14.mono, aes(CTRL, STIM)) + geom_point() + ggtitle("CD14 Monocytes")
+p2 <- LabelPoints(plot = p2, points = genes.to.label, repel = TRUE)
+plot_grid(p1, p2)
+``` 
+
+
+``` {r, fig.width= 8, fig.height= 10}
+FeaturePlot(Athritis_annotation, features = c("CD3E", "FOXP3", "CD4", "CD8A"), split.by = "type", max.cutoff = 3,
+            cols = c("grey", "red"))
+```
+
+
+
+
+
+ 
+
+

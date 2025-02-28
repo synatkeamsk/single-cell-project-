@@ -1,0 +1,57 @@
+---
+title: "Cell Communication"
+output: html_document
+date: "2023-10-25"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+``` {r}
+BiocManager::install("ComplexHeatmap")
+devtools::install_github("sqjin/CellChat")
+library(CellChat)
+library(Seurat)
+library(reticulate)
+```
+
+# load seurat object
+
+``` {r}
+majorclus<- readRDS("Arthritis_annotation.RDS")
+view(majorclus@meta.data)
+DimPlot(Athritis_annotation, reduction = "umap", split.by = "type")
+``` 
+
+``` {r}
+#data input
+data.input <- GetAssayData(Athritis_annotation, assay = "RNA", slot = "data") 
+
+#label
+labels <- Idents(Athritis_annotation)
+
+#meta
+meta <- data.frame(group = labels, row.names = names(labels)) 
+
+#cellchat object
+cellchat <- createCellChat(object = data.input, meta = meta, group.by = "group")
+view(cellchat@meta)
+``` 
+
+
+# cell/cell communication
+
+``` {r}
+
+``` 
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,310 @@
+---
+title: "Clustering"
+date: "2023-11-15"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+
+# Objective 
+
+Here, I perform the doublet finder and filter out doublet cells. 
+
+**Rational**
+
+Doublets/Mulitples of cells in the same well/droplet is a common issue in scRNAseq protocols. Especially in droplet-based methods whith overloading of cells. In a typical 10x experiment the proportion of doublets is linearly dependent on the amount of loaded cells. As indicated from the Chromium user guide, doublet rates are about as follows:
+
+
+#Multiplet Rate (%)                 # of cell loaded         # of cell recovered 
+
+   # ~ 0.4                              ~  870                    ~ 500
+
+   # ~ 0.8                              ~ 1700                     ~ 1000
+
+   # ~ 1.6                              ~ 3500                     ~ 2000
+
+   # ~ 2.3                              ~ 5300                     ~ 3000
+
+   # ~ 3.1                              ~ 7000                     ~ 4000
+
+   # ~ 3.9                              ~ 8700                     ~ 5000
+
+   # ~ 4.6                              ~ 10500                    ~ 6000
+
+   # ~ 5.4                              ~ 12200                    ~ 7000
+
+   # ~ 6.1                              ~ 14000                    ~ 8000
+
+   # ~ 6.9                              ~ 15700                    ~ 9000
+
+   # ~ 7.6                              ~ 17400                    ~ 10000
+
+``` {r}
+library(tidyverse)
+library(Seurat)
+``` 
+
+# patients 164S
+
+``` {r}
+Normalized.164s<- readRDS("Normalized.164s.RDS")
+
+#doublet plot 
+DimPlot(Normalized.164s, reduction = 'umap', group.by = "DF.classifications_0.25_0.12_447") +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Single and Doublet cells of 164S
+``` {r}
+table(Normalized.164s@meta.data$DF.classifications_0.25_0.12_447)
+``` 
+``` {r}
+VlnPlot(Normalized.164s, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.12_447", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+# patients 1642
+
+``` {r}
+Normalized.164S2<- readRDS("Normalized.164S2.RDS")
+
+#doublet plot 
+DimPlot(Normalized.164S2, reduction = 'umap', group.by = "DF.classifications_0.25_0.13_145") +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Single and Doublet cells of 164S2
+
+``` {r}
+table(Normalized.164S2@meta.data$DF.classifications_0.25_0.13_145)
+```
+``` {r}
+VlnPlot(Normalized.164S2, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.13_145", pt.size = 0.1) +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+# patients 1842
+
+
+``` {r}
+Normalized.184S2<- readRDS("Normalized.184S2.RDS")
+
+#doublet plot 
+DimPlot(Normalized.184S2, reduction = 'umap', group.by = "DF.classifications_0.25_0.08_89") +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Single and Doublet cells of 184S2
+
+``` {r}
+table(Normalized.184S2@meta.data$DF.classifications_0.25_0.08_89)
+```
+``` {r}
+VlnPlot(Normalized.184S2, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.08_89", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# patients 184S3
+
+``` {r}
+Normalized.184S3<- readRDS("Normalized.184S3.RDS")
+
+#doublet plot 
+DimPlot(Normalized.184S3, reduction = 'umap', group.by = "DF.classifications_0.25_0.05_29") +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Single and Doublet cells of 184S3
+
+``` {r}
+table(Normalized.184S3@meta.data$DF.classifications_0.25_0.05_29)
+```
+
+``` {r}
+VlnPlot(Normalized.184S3, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.05_29", pt.size = 0.1) +
+  theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+# patients 218S
+
+``` {r}
+Normalized.218S<- readRDS("Normalized.218S.RDS")
+
+#doublet plot 
+DimPlot(Normalized.218S, reduction = 'umap', group.by = "DF.classifications_0.25_0.05_515") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Single and Doublet cells of 218S
+
+``` {r}
+table(Normalized.218S@meta.data$DF.classifications_0.25_0.05_515)
+```
+
+``` {r}
+VlnPlot(Normalized.218S, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.05_515", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+# patients 218S2
+
+``` {r}
+Normalized.218S2<- readRDS("Normalized.218S2.RDS")
+
+#doublet plot 
+DimPlot(Normalized.218S2, reduction = 'umap', group.by = "DF.classifications_0.25_0.13_119") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Single and Doublet cells of 218S2
+
+``` {r}
+table(Normalized.218S2@meta.data$DF.classifications_0.25_0.13_119)
+```
+
+``` {r}
+VlnPlot(Normalized.218S2, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.13_119", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# patients SA5
+
+``` {r}
+Normalized.SA5<- readRDS("Normalized.SA5.RDS")
+
+#doublet plot 
+DimPlot(Normalized.SA5, reduction = 'umap', group.by = "DF.classifications_0.25_0.28_356") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Single and Doublet cells of SA5 
+
+``` {r}
+table(Normalized.SA5@meta.data$DF.classifications_0.25_0.28_356)
+```
+
+``` {r}
+VlnPlot(Normalized.SA5, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.28_356", pt.size = 0.1) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+# patients SA6
+
+``` {r}
+Normalized.SA6<- readRDS("Normalized.SA6.RDS")
+
+#doublet plot 
+DimPlot(Normalized.SA6, reduction = 'umap', group.by = "DF.classifications_0.25_0.08_356") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+## Single and Doublet cells of SA6
+
+``` {r}
+table(Normalized.SA6@meta.data$DF.classifications_0.25_0.08_356)
+```
+
+``` {r}
+VlnPlot(Normalized.SA6, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.08_356", pt.size = 0.1) +
+  theme_minimal()
+```
+
+
+# patients SA7
+
+``` {r}
+Normalized.SA7<- readRDS("Normalized.SA7.RDS")
+
+#doublet plot 
+DimPlot(Normalized.SA7, reduction = 'umap', group.by = "DF.classifications_0.25_0.19_139") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+## Single and Doublet cells of SA7
+
+``` {r}
+table(Normalized.SA7@meta.data$DF.classifications_0.25_0.19_139)
+```
+
+``` {r}
+VlnPlot(Normalized.SA7, features = "nFeature_RNA", group.by = "DF.classifications_0.25_0.19_139", pt.size = 0.1) +
+  theme_minimal()
+```
+
+# plot singlet & doublet for all samples
+
+``` {r}
+doublet<- read.csv("doublet.csv", stringsAsFactors = TRUE)
+doublet
+```
+
+``` {r, fig.width= 6, fig.height= 6}
+ggplot(doublet, aes(x= patient_id, y= N, fill= cell)) + 
+  theme_minimal() +
+  geom_bar(stat = "identity", position=position_dodge()) + 
+  geom_text(aes(label = N, y= N-50), nudge_x = c(0.22, -0.22), size = 3, hjust = 0.5, vjust = 0.8) +
+  labs(y= "# of cells", title = "Singlet and Doublets") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+``` {r, fig.width= 6, fig.height= 6}
+ggplot(doublet, aes(x= patient_id, y= N, fill= cell)) + 
+  theme_minimal() + 
+  geom_col() + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(y= "Number of cells", title = "Singlet and Doublets")
+```
+
+
+
+``` {r}
+sessionInfo()
+
+``` 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

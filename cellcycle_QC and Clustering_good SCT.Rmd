@@ -1,0 +1,270 @@
+---
+title: "Clustering"
+date: "2023-11-17"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+---
+
+# Objective 
+
+1- Performing extra QC by regressing out cell cycle phase S and G2/M and normalize using SCTransform
+
+2- Integration with harmony and clustering 
+
+# library
+``` {r, warning= FALSE, fig.width= 6, fig.height= 6}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+```
+
+``` {r}
+#==================================================================================================
+#library(remotes)
+# Replace 'X.X.X' with your desired version
+install.packages("Matrix")
+remotes::install_version(package = 'Seurat', version = package_version('4.0.3'))
+remove.packages("Seurat")
+#==================================================================================================
+``` 
+
+#load invidual objects
+``` {r}
+p_164S<- readRDS("Singlet.164S.RDS")
+p_164S2<- readRDS("Singlet.164S2.RDS")
+p_184S2<- readRDS("Singlet.184S2.RDS")
+p_184S3<- readRDS("Singlet.184S3.RDS")
+p_218S<- readRDS("Singlet.218S.RDS")
+p_218S2<- readRDS("Singlet.218S2.RDS")
+p_SA5<- readRDS("Singlet.SA5.RDS")
+p_SA6<- readRDS("Singlet.SA6.RDS")
+p_SA7<- readRDS("Singlet.SA7.RDS")
+
+#remove unused objects to reduce memory
+rm(p_164S, p_164S2, p_184S2, p_184S3, p_218S, p_218S2, p_SA5, p_SA6, p_SA7)
+view(p_SA7@meta.data)
+
+#merge seurat objects
+Arthritis.merge<- merge(p_164S, y=c(p_164S2, p_184S2, p_184S3, p_218S, p_218S2, p_SA5, p_SA6, p_SA7))
+
+#save merge object
+saveRDS(Arthritis.merge, file = "Arthritis.merge.SCT.RDS") # save on 12/01/2022
+
+#Remove merged object
+rm(Arthritis.merge.flt)
+``` 
+
+# Read merged seurat object and plot QC plot
+
+``` {r, fig.with= 8, fig.height= 6}
+Arthritis.merge<- readRDS("Arthritis.merge.SCT.RDS")
+
+#plot filtered data 
+VlnPlot(Arthritis.merge, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+``` 
+
+
+# Feature-Feature relationship
+``` {r, fig.width= 10, fig.height= 5}
+#Visualize feature-feature relationship 
+plot1 <- FeatureScatter(Arthritis.merge, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+plot2 <- FeatureScatter(Arthritis.merge, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident") +
+ theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+plot1|plot2 
+``` 
+
+#Filter noise genes
+
+``` {r, fig.height= 6, fig.width= 7}
+par(mar = c(4, 8, 2, 1))
+C_u <- Arthritis.merge@assays$RNA@counts
+C_u <- Matrix::t(Matrix::t(C_u)/Matrix::colSums(C_u)) * 100
+most_expressed <- order(apply(C_u, 1, median), decreasing = T)[20:1]
+
+#plot gene 
+boxplot(as.matrix(t(C_u[most_expressed, ])), cex.axis = 0.5, las = 1, xlab = "% total count per cell",
+    col = (scales::hue_pal())(20)[20:1], horizontal = TRUE)
+``` 
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Arthritis.merge.flt <- Arthritis.merge[!grepl("MALAT1", rownames(Arthritis.merge)), ]
+
+# Filter Mitocondria
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MT-", rownames(Arthritis.merge.flt)), ]
+
+#Mitochondria
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MT\\.", rownames(Arthritis.merge.flt)), ]
+
+#Filter gene LOC
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^LOC(0-9)", rownames(Arthritis.merge.flt)), ]
+
+# Filter Ribossomal gene 
+Arthritis.merge.flt <- Arthritis.merge.flt[ ! grepl('^RP[SL]', rownames(Arthritis.merge.flt)), ]
+
+# HSPA
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^HSPA", rownames(Arthritis.merge.flt)), ]
+
+# MTRNR
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MTRNR", rownames(Arthritis.merge.flt)), ]
+
+# TR pattern
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^TR(A|B|G|D)V", rownames(Arthritis.merge.flt)), ]
+```  
+
+#Verify whether noise genes have been removed 
+
+``` {r, fig.height= 6, fig.width= 7}
+par(mar = c(4, 8, 2, 1))
+C <- Arthritis.merge.flt@assays$RNA@counts
+C <- Matrix::t(Matrix::t(C)/Matrix::colSums(C)) * 100
+most_expressed <- order(apply(C, 1, median), decreasing = T)[20:1]
+
+#plot gene 
+boxplot(as.matrix(t(C[most_expressed, ])), cex.axis = 0.5, las = 1, xlab = "% total count per cell",
+    col = (scales::hue_pal())(20)[20:1], horizontal = TRUE)
+``` 
+
+# SCTransform and regress out cell cycle score
+
+``` {r, fig.width= 10, fig.height= 3 , warning= FALSE}
+
+#First round of SCT
+Arthritis<- SCTransform(Arthritis.merge.flt, 
+                       assay = "RNA", 
+                        new.assay.name = "SCT" , 
+                       vars.to.regress = c("percent.mt", "nFeature_RNA", "nCount_RNA"), 
+                       verbose = FALSE)
+
+#Cell cycle score 
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+Arthritis<- CellCycleScoring(
+  Arthritis,
+  s.features = s.genes,
+  g2m.features = g2m.genes,
+  assay = 'SCT',
+  set.ident = TRUE
+  )
+
+#plot cell cyle 
+VlnPlot(Arthritis, features = c("S.Score", "G2M.Score"), group.by = "orig.ident",
+    ncol = 4, pt.size = 0.1)
+
+```
+
+```{r}
+# normalise again but this time including also the cell cycle scores
+Arthritis<- SCTransform(
+Arthritis,
+assay = 'RNA',
+new.assay.name = 'SCT',
+vars.to.regress = c('percent.mt', 'nFeature_RNA', 'nCount_RNA', 'S.Score', 'G2M.Score')
+)
+
+# Save this object 
+saveRDS(Arthritis, file = "Arthritis_SCT.RDS") #save on 12/01/23
+
+# PCA
+Arthritis <- RunPCA(Arthritis, verbose = FALSE, assay = "SCT", npcs = 50)
+
+#Save this object
+saveRDS(Arthritis, file="Arthritis_pca.RDS") # Saved on 12/01/2023
+
+#Plot PC components ! 
+Arthritis<- readRDS("Arthritis_pca.RDS")
+
+#PC component plot
+ElbowPlot(Arthritis, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#heatmap of highly variable genes 
+```{r, fig.width= 8, fig.height= 5}
+DimHeatmap(Arthritis, dims = 1:6, cells = 500, ncol = 3, balanced = TRUE)
+``` 
+
+# Integration using Harmony
+
+``` {r, fig.width= 5, fig.height= 4}
+
+#run Harmony integration
+library(harmony)
+
+#run the harmony function
+Arthritis.Harmony<- RunHarmony(Arthritis, group.by.vars = c("orig.ident", "type"))
+
+#save harmony object
+#saveRDS(Arthritis.Harmony, file = "Harmony.SCT.RDS")
+
+#RunUMAP
+Arthritis.integration<- FindNeighbors(object = Arthritis.Harmony, 
+                                      reduction="harmony", 
+                                      dims = 1:43)
+
+Arthritis.integration<- FindClusters(object = Arthritis.integration, 
+                                     resolution = 0.4)
+
+Arthritis.integration<- RunUMAP(object = Arthritis.integration, 
+                                reduction = "harmony", 
+                                dims = 1:43)
+
+
+#Save final object
+#saveRDS(Arthritis.integration, file= "UMAP.SCT.RDS")
+
+#Read UMAP 
+Arthritis.integration<- readRDS("UMAP.SCT.RDS")
+
+#plot non-linear dimentionality reduction
+DimPlot(Arthritis.integration, reduction = "umap",label = TRUE) +
+  theme_minimal() +
+  NoLegend()
+```
+# some feature plots
+
+## CD4/Foxp3
+``` {r, fig.width= 9, fig.height= 4}
+FeaturePlot(Arthritis.integration, features = c("FOXP3", "CD4"), pt.size = 0.2, ncol = 2)
+```
+## T cell subsets
+``` {r, fig.width= 7, fig.height= 5}
+
+FeaturePlot(Arthritis.integration, features = c("CD3E", "CD8A", "CD4", "FOXP3"), pt.size = 0.2,
+    ncol = 2)
+```
+
+
+
+## Some common markers 
+
+``` {r, fig.width= 8, fig.height= 11}
+FeaturePlot(Arthritis.integration, features = c("EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "S100A8", "S100A9", "CD8A"), pt.size = 0.2,
+    ncol = 2)
+```
+
+``` {r, fig.width= 5, fig.height= 4}
+Arthritis.integration.tsne<- RunTSNE(object = Arthritis.integration, 
+                                reduction = "harmony", 
+                                dims = 1:40)
+DimPlot(Arthritis.integration.tsne, reduction = "tsne",label = TRUE) +
+  theme_void() +
+  NoLegend()
+```
+
+
+
+``` {r}
+sessionInfo()
+```

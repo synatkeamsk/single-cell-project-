@@ -1,0 +1,144 @@
+---
+title: "Arthritis_Clustering"
+output: html_document
+date: "2023-11-13"
+---
+
+# Ojective
+
+- Integration using harmony
+- Clustering 
+
+# library
+``` {r, warning= FALSE, fig.width= 6, fig.height= 6}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+```
+
+# Load data back and merge the objects
+
+``` {r}
+p_164S<- readRDS("Singlet.164S.RDS")
+p_164S2<- readRDS("Singlet.164S2.RDS")
+p_184S2<- readRDS("Singlet.184S2.RDS")
+p_184S3<- readRDS("Singlet.184S3.RDS")
+p_218S<- readRDS("Singlet.218S.RDS")
+p_218S2<- readRDS("Singlet.218S2.RDS")
+p_SA5<- readRDS("Singlet.SA5.RDS")
+p_SA6<- readRDS("Singlet.SA6.RDS")
+p_SA7<- readRDS("Singlet.SA7.RDS")
+
+#merge objects
+Arthritis.merge.default<- merge(p_164S, y=c(p_164S2, p_184S2, p_184S3, p_218S, p_218S2, p_SA5, p_SA6, p_SA7))
+``` 
+# Feature-Feature relationship
+``` {r, fig.width= 10, fig.height= 5}
+#Visualize feature-feature relationship 
+plot1 <- FeatureScatter(Arthritis.merge, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+plot2 <- FeatureScatter(Arthritis.merge, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident") +
+ theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+plot1|plot2 
+```
+
+# Investigate gene that are differently expressed
+``` {r, fig.width= 7, fig.height= 4, warning= FALSE}
+#cell cycle scoring 
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+#Data normalization 
+
+set.seed(12345)
+All_arthritis_normal <- NormalizeData(Arthritis.merge) 
+All_arthritis_normal <- FindVariableFeatures(All_arthritis_normal) 
+
+#feature scaling !
+All_arthritis_normal <- ScaleData(All_arthritis_normal, vars.to.regress = "percent.mt") 
+All_arthritis_normal <- RunPCA(All_arthritis_normal, seed.use = 12345,verbose = FALSE)
+
+#Plot PC components ! 
+ElbowPlot(All_arthritis_normal, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_minimal()
+```
+
+# Integration using Harmony
+``` {r, fig.width= 5, fig.height= 4}
+library(harmony)
+set.seed(12345)
+All_arthritis_integration<- RunHarmony(All_arthritis_normal, group.by.vars = "orig.ident")
+All_arthritis_integration <- RunUMAP(object = All_arthritis_integration,
+                          reduction = "harmony",
+                          dims = 1:40, min.dist = 0.5, spread = 3, n.neighbors = 30)
+
+All_arthritis_integration <- FindNeighbors(object = All_arthritis_integration, reduction="harmony", dims = 1:40)
+All_arthritis_integration <- FindClusters(object = All_arthritis_integration, resolution = 0.6, random.seed = 12345)
+DimPlot(All_arthritis_integration) +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+``` {r}
+FeaturePlot(All_arthritis_integration, features = c("CD4", "FOXP3"), pt.size = 0.2,
+    ncol = 2)
+``` 
+
+
+#======================================================================================================================================
+                              #normalization using SCTransform
+#======================================================================================================================================
+
+#SCTransform
+``` {r}
+Arthritis<- SCTransform(Arthritis.merge, method = "glmGamPoi", vars.to.regress = "percent.mt", verbose= FALSE)
+``` 
+
+# Perform dimensionality reduction by PCA and plot PC components
+``` {r}
+
+#Run PCA
+Arthritis<- RunPCA(Arthritis,seed.use = 12345, verbose = FALSE)
+
+#Elbow plot
+ElbowPlot(Arthritis, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+# Integration using harmony
+``` {r}
+library(harmony)
+set.seed(12345)
+Arthritis<- RunHarmony(Arthritis, group.by.vars = "orig.ident")
+```
+
+
+``` {r, fig.width= 6, fig.height= 4}
+library(harmony)
+set.seed(12345)
+Arthritis<- RunUMAP(object = Arthritis,
+                          reduction = "harmony",
+                          dims = 1:40)
+
+Arthritis<- FindNeighbors(object = Arthritis, reduction="harmony", dims = 1:40)
+Arthritis<- FindClusters(object = Arthritis, resolution = 0.6, random.seed = 12345)
+DimPlot(Arthritis, label= TRUE) +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+``` {r, fig.width= 9, fig.height= 5}
+FeaturePlot(Arthritis, features = c("CD3E", "CD8A", "CD4", "FOXP3"), pt.size = 0.2,
+    ncol = 2)
+``` 
+
+``` {r, fig.width= 9, fig.height= 4}
+FeaturePlot(Arthritis, features = c("FOXP3"), pt.size = 0.2,
+    ncol = 2)
+``` 
+

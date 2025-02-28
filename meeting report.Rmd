@@ -1,0 +1,99 @@
+---
+title: "Meeting Report"
+output: html_document
+date: "2023-12-07"
+---
+
+# libraries
+``` {r}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(glmGamPoi)
+```
+
+``` {r}
+singlet<- readRDS("Singlet_SCT_merge.RDS")
+
+#plot unfiltered data 
+
+VlnPlot(singlet, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+``` 
+
+
+# Feature and feature relationship 
+
+``` {r}
+plot1 <- FeatureScatter(singlet, feature1 = "nCount_RNA", feature2 = "percent.mt") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+plot2 <- FeatureScatter(singlet, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+plot1|plot2 
+``` 
+
+
+# Normalize the data using SCTransform
+
+``` {r}
+#SCTransform
+#Arthritis<- SCTransform(Singlet, 
+                        #method= "glmGamPoi", 
+                        #vars.to.regress = "percent.mt", 
+                        #verbose= FALSE)
+
+#Run PCA
+#Arthritis<- RunPCA(Arthritis, verbose = FALSE)
+
+#Read PCA Object back in
+Arthritis<- readRDS("preprocess_SCT_PCA.RDS")
+
+
+#Elbow plot
+ElbowPlot(Arthritis, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+# Heatmap for Deg
+
+``` {r, fig.width= 8, fig.height= 5}
+DimHeatmap(Arthritis, dims = 1:3, cells = 500, balanced = TRUE)
+``` 
+
+# Integration and clustering 
+
+``` {r, fig.width= 4, fig.height= 4}
+#library(harmony)
+#Arthritis.integration<- RunHarmony(Arthritis ,group.by.vars = "orig.ident")
+#UMAP.singlparam<- FindNeighbors(Arthritis.integration, reduction = "harmony", dims = 1:43, verbose = FALSE)
+#UMAP.singlparam<- FindClusters(UMAP.singlparam, resolution = 0.4)
+#UMAP.singlparam<- RunUMAP(object = UMAP.singlparam,
+                          #reduction = "harmony",
+                          #dims = 1:43)
+
+#save this object
+#saveRDS(UMAP.singlparam, file = "UMAP_SCT_Filter.RDS")
+
+#plot umap 
+UMAP.singlparam<- readRDS("UMAP_SCT_Filter.RDS")
+DimPlot(UMAP.singlparam, reduction= "umap", label = TRUE, repel = FALSE) +
+  theme_minimal() +
+  NoLegend()
+``` 
+
+``` {r, fig.width= 6, fig.height= 8}
+FeaturePlot(UMAP.singlparam, features = c("PTPRC", "CD3E", "CD8A", "CD4", "FOXP3", "CD19" ), pt.size = 0.2,
+    ncol = 2)
+```
+
+``` {r, fig.width= 6, fig.height= 11}
+FeaturePlot(UMAP.singlparam, features = c("EPCAM", "PTPRC", "COL1A1", "CD79A", "CD3D", "S100A8", "S100A9", "CD8A"), pt.size = 0.2,
+    ncol = 2)
+```
+
+
+``` {r}
+sessionInfo()
+```
+
+

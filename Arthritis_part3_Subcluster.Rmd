@@ -1,0 +1,1345 @@
+---
+title: "Subcluster analysis"
+output: html_document
+date: "2023-10-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Perform subclustering of T cell/NK/NKT and B cells 
+
+``` {r}
+library(Seurat)
+library(tidyverse)
+subcluster<- readRDS(file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/Arthritis_annotation.RDS")
+```
+
+## dimplot 
+
+``` {r, fig.width= 4, fig.height= 4}
+DimPlot(subcluster, reduction = "umap", label = TRUE, label.size = 2.5) +
+  theme_minimal() +
+  NoLegend() +
+  ggtitle("All samples") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  NoAxes()
+``` 
+
+## Subset T cell cluster 
+
+``` {r, fig.width= 6, fig.height= 3}
+#subset T cell !
+Tcell.cluster <- subset(subcluster, idents = c("CD4", "Naive CD4", "CD8", "Treg", "γδ T Cells", "NK & NK T", "CD8 effector/memo", 
+                                               "Proliferating T"))
+
+## plot T cell cluster
+DimPlot(Tcell.cluster, reduction = "umap", label = FALSE, label.size = 3) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=14), 
+        axis.title= element_text(size = 14, face = "bold"), 
+        axis.text = element_text(size=13, face = "bold"), 
+        axis.text.x = element_text(angle = 90, vjust = 0.1)) +
+  labs(y= "UMAP__2", x= "UMAP__1") + NoAxes()
+``` 
+
+#Further clustering of T cells! 
+``` {r}
+library(harmony)
+set.seed(15874)
+Tcell.cluster_UMAP<-  RunHarmony(Tcell.cluster, group.by.vars = "orig.ident")
+Tcell.cluster_UMAP <- FindNeighbors(Tcell.cluster_UMAP, reduction= "harmony", dims = 1:40)
+Tcell.cluster_UMAP <- FindClusters(Tcell.cluster_UMAP, resolution = 0.7)
+Tcell.cluster_UMAP <- RunUMAP(Tcell.cluster_UMAP, reduction = "harmony", dims = 1:40,
+                         n.neighbors = 30, min.dist = 0.03, spread =3.3)
+
+#save T cell cluster object
+saveRDS(Tcell.cluster_UMAP, file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/CD3_cluster.RDS")
+```
+
+``` {r}
+# read RDS file back in
+Tcell.cluster<- readRDS(file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/CD3_cluster.RDS")
+View(Tcell.cluster@meta.data)
+```
+
+
+## plot umap
+``` {r,fig.width= 3.5, fig.height= 3}
+DimPlot(Tcell.cluster, reduction = "umap", label = TRUE) +
+  theme_minimal() + 
+  theme(legend.text = element_text(size= 8)) + 
+  NoAxes() + 
+  NoLegend()
+```` 
+
+
+## Identify where is CD4, CD8, NKT, Treg, gamma/delta T cells 
+
+``` {r, fig.width= 9, fig.height= 6}
+FeaturePlot(Tcell.cluster, features = c("PTPRC", "CD3E","CD4", "CD8A", "FOXP3", "ITGAE", "GNLY", "CD69", "CD38"), 
+            label = TRUE, label.size = 2,  cols = c("grey", "red"), ncol = 3)
+``` 
+
+
+
+``` {r, fig.width= 7, fig.height= 5}
+features <- c("CD3E","CD3D", "CD4", "CD8A", "FOXP3", "CCR7", "CD69", "CXCR3", "CXCR5", "CXCR6", "CCR4", "CCR6", "KLRB1", "IL2RA", "IL7R", "KLRG1", "CXCL13", "TOX", "LAG3", "CTLA4", "PDCD1", "HAVCR2", "TIGIT", "EOMES", "CX3CR1", "MKI67", "TRGV9", 
+              "TRGV2", "FCGR3A", "NCAM1")
+
+#plot
+VlnPlot(Tcell.cluster, features = features, stack = TRUE, flip = TRUE) + 
+  theme(legend.position = "none") + RotatedAxis()
+``` 
+
+
+##  find deg of cluster 0 --- CD4+ cluster
+
+``` {r}
+
+DefaultAssay(Tcell.cluster)<- "RNA"
+
+#compare gene expression of cluster 0 to the rest of the cluster
+Tcell.cluster0<- FindMarkers(Tcell.cluster, ident.1 = 0, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster0, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster0<-  Tcell.cluster0 %>% arrange(desc(avg_log2FC))
+``` 
+
+# Save deg of cluster 0 
+
+``` {r}
+write.csv(Tcell.cluster0, file = "Y:/Recurrent__Arthritis__Single cell/deg_Tcell_cluster0")
+
+```
+
+## Using enrich R 
+
+``` {r}
+T.cluster_0<- read.csv("sub_T_clus0.csv", stringsAsFactors = TRUE)
+head(T.cluster_0)
+``` 
+# plot cell type of cluster 0
+
+``` {r}
+#filter top 10
+T.cluster_0<- T.cluster_0[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_0, aes(reorder(Cell, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD4 T cell subsets", y="-log10(Adjusted_P_value)", title = "CD4 T cell subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, *cluster 0* is assigned as CD4+ Naive T
+
+## perform gene set enrichment 
+
+``` {r}
+BiocManager::install("fgsea")
+library(fgsea)
+Tcell.cluster0$gene<- rownames(Tcell.cluster0)
+Tcell.cluster0<- Tcell.cluster0 %>% arrange(desc(avg_log2FC))
+
+#write csv file for deg
+write.csv(Tcell.cluster0, file = "Y:/Recurrent__Arthritis__Single cell/deg.cluster0.csv")
+
+fold_changes<- Tcell.cluster0$avg_log2FC
+names(fold_changes)<- Tcell.cluster0$gene
+``` 
+
+
+``` {r}
+# Load GSEA gene sets: http://www.gsea-msigdb.org/gsea/msigdb/index.jsp
+library(GSEA)
+Reactome <- fgsea::gmtPathways("Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/c2.cp.reactome.v2023.1.Hs.symbols.gmt")
+hallmark <- fgsea::gmtPathways("Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/h.all.v2023.1.Hs.symbols.gmt")
+KEGG <- fgsea::gmtPathways("Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/c2.cp.kegg.v2023.1.Hs.symbols.gmt")
+GO <- fgsea::gmtPathways("Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/c5.go.bp.v2023.1.Hs.symbols.gmt")
+
+#combine the four gsea
+Four_gene_sets <- c(hallmark, KEGG, GO, Reactome)
+
+#getset for all pathway 
+Allgenesets <- fgsea::gmtPathways("Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/msigdb.v2023.1.Hs.symbols.gmt")
+
+``` 
+ 
+ 
+# GSEA analysis
+``` {r}
+gsea_Myo <- fgsea(pathways = Reactome,
+                  stats = fold_changes,
+                  eps = 0.0,
+                  minSize=15,
+                  maxSize=500)
+
+head(gsea_Myo[order(pval), ])
+``` 
+# make a table plot for a bunch of selected pathways:
+
+``` {r, fig.width= 7, fig.height= 3}
+topPathwaysUp <- gsea_Myo[ES > 0][head(order(pval), n=10), pathway]
+topPathwaysDown <- gsea_Myo[ES < 0][head(order(pval), n=10), pathway]
+topPathways <- c(topPathwaysUp, rev(topPathwaysDown))
+table<- plotGseaTable(Reactome [topPathways], fold_changes, gsea_Myo, 
+              gseaParam=0.5)
+print(table)
+
+``` 
+## enrichment plot 
+``` {r}
+# make an enrichment plot for a pathway:
+plotEnrichment(Reactome[["REACTOME_EUKARYOTIC_TRANSLATION_ELONGATION"]],
+               fold_changes) + labs(title="EUKARYOTIC_TRANSLATION_ELONGATION")
+```
+
+# Save gsea_Myo
+``` {r}
+gsea_Myo <- apply(gsea_Myo, 2, as.character)
+write.table(gsea_Myo, file="Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/gsea_MyoFReactome.CSV",
+        append = FALSE, quote = TRUE, sep = ",", row.names = F, col.names = TRUE)
+``` 
+
+# Run hallmark pathway via enrich R 
+
+``` {r}
+library(tidyverse)
+cluster0_hallmark<- read.csv("cluster0_hallmark.csv", stringsAsFactors = TRUE)
+head(cluster0_hallmark)
+``` 
+
+``` {r}
+#filter top 10
+cluster0_hallmark<- cluster0_hallmark[c(1:12),] 
+
+#ggplot 
+ggplot(cluster0_hallmark, aes(reorder(Term,log_pdjust),log_pdjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#0000FF")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD4 T cell subsets", y="-log10(Adjusted_P_value)", title = "Hallmark Pathways") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+# repeat the same thing for the rest of the cluster 
+
+# Cluster 1 --- CD8+ cluster
+``` {r}
+DefaultAssay(Tcell.cluster)<- "RNA"
+
+#compare gene expression of cluster 0 to the rest of the cluster
+Tcell.cluster1<- FindMarkers(Tcell.cluster, ident.1 = 1, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster1, n = 20)
+``` 
+
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster1<-  Tcell.cluster1 %>% arrange(desc(avg_log2FC))
+``` 
+
+# Save deg of cluster 1
+
+``` {r}
+write.csv(Tcell.cluster1, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster1.csv")
+```
+
+## Using enrich R 
+
+``` {r}
+T.cluster_1<- read.csv("sub_T_clus1.csv", stringsAsFactors = TRUE)
+head(T.cluster_1)
+``` 
+``` {r}
+#filter top 10
+T.cluster_1<- T.cluster_1[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_1, aes(reorder(Cell, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD8 T cell subsets", y="-log10(Adjusted_P_value)", title = "CD8 T cell subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, cluster 1 is assigned as **CD8+ effector memory cells**
+
+# Cluster 2 --- Foxp3+ cluster 
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster 0 to the rest of the cluster
+Tcell.cluster2<- FindMarkers(Tcell.cluster, ident.1 = 2, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster2, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster2<-  Tcell.cluster2 %>% arrange(desc(avg_log2FC))
+``` 
+
+
+# Save deg of cluster 2
+
+``` {r}
+write.csv(Tcell.cluster2, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster2.csv")
+```
+
+
+## Using enrich R 
+
+``` {r}
+T.cluster_2<- read.csv("sub_T_clus2.csv", stringsAsFactors = TRUE)
+head(T.cluster_2)
+``` 
+``` {r}
+#filter top 10
+T.cluster_2<- T.cluster_2[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_2, aes(reorder(Cell, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="Treg subsets", y="-log10(Adjusted_P_value)", title = " Treg subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+
+``` {r, fig.width= 12, fig.height= 4}
+FeaturePlot(Tcell.cluster_UMAP, features = c("FOXP3","CCR7", "CXCR4", "CCR2", "CCR4", "CCR5", "CCR6", "CXCR3", "CXCR5", "CXCR6"), 
+            label = TRUE, label.size = 2,  cols = c("grey", "red"), ncol = 5)
+``` 
+
+
+Therefore, **cluster2** is assigned as **naive Regulatory T cell**
+
+
+# Cluster 3 ---- CD4+ cells
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster 0 to the rest of the cluster
+Tcell.cluster3<- FindMarkers(Tcell.cluster, ident.1 = 3, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster3, n = 20)
+``` 
+
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster3<-  Tcell.cluster3 %>% arrange(desc(avg_log2FC))
+``` 
+
+# Save deg of cluster 3
+
+``` {r}
+write.csv(Tcell.cluster3, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster3.csv")
+```
+
+## Using enrich R 
+
+``` {r}
+T.cluster_3<- read.csv("sub_T_clus3.csv", stringsAsFactors = TRUE)
+head(T.cluster_3)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_3<- T.cluster_3[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_3, aes(reorder(Cell, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD4 T subsets", y="-log10(Adjusted_P_value)", title = " CD4 subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, **cluster 3** is assigned to **Naive CD4 T cell** 
+
+# Cluster 7 --- CD4 positive cells
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster 0 to the rest of the cluster
+Tcell.cluster7<- FindMarkers(Tcell.cluster, ident.1 = 7, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster7, n = 20)
+``` 
+
+
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster7<-  Tcell.cluster7 %>% arrange(desc(avg_log2FC))
+``` 
+
+# Save deg of cluster 7
+
+``` {r}
+write.csv(Tcell.cluster7, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster7.csv")
+```
+
+
+## Using enrich R 
+
+``` {r}
+T.cluster_7<- read.csv("sub_T_clus7.csv", stringsAsFactors = TRUE)
+head(T.cluster_7)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_7<- T.cluster_7[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_7, aes(reorder(Cell, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD4 T subsets", y="-log10(Adjusted_P_value)", title = " CD4 subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, cluster 7 is assigned as **CD4 central memory cell**
+
+# cluster 4 
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster 0 to the rest of the cluster
+Tcell.cluster4<- FindMarkers(Tcell.cluster, ident.1 = 4, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster4, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster4<-  Tcell.cluster4 %>% arrange(desc(avg_log2FC))
+``` 
+
+
+# Save deg of cluster 4
+
+``` {r}
+write.csv(Tcell.cluster4, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster4.csv")
+```
+
+**Investigate this cluster again**
+
+
+# cluster 5 
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster5<- FindMarkers(Tcell.cluster, ident.1 = 5, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster5, n = 20)
+``` 
+
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster5<-  Tcell.cluster5 %>% arrange(desc(avg_log2FC))
+``` 
+
+
+
+``` {r}
+write.csv(Tcell.cluster5, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster5.csv")
+```
+
+## Using enrich R 
+
+``` {r}
+T.cluster_5<- read.csv("sub_T_clus5.csv", stringsAsFactors = TRUE)
+head(T.cluster_5)
+``` 
+
+
+``` {r}
+#filter top 10
+T.cluster_5<- T.cluster_5[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_5, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="NK/NK T subsets", y="-log10(Adjusted_P_value)", title = " NK/NTK subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, **Cluster 5** is assigned to **CD56-dim Natural killer cell**
+
+
+# cluster 6
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster6<- FindMarkers(Tcell.cluster, ident.1 = 6, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster6, n = 20)
+``` 
+
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster6<-  Tcell.cluster6 %>% arrange(desc(avg_log2FC))
+``` 
+
+``` {r}
+write.csv(Tcell.cluster6, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster6.csv")
+```
+
+## Using enrich R 
+
+``` {r}
+T.cluster_6<- read.csv("sub_T_clus6.csv", stringsAsFactors = TRUE)
+head(T.cluster_6)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_6<- T.cluster_6[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_6, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD4 T subsets", y="-log10(Adjusted_P_value)", title = "CD4 subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, **cluster 6** is assigned as **CD4+ Effector Memory T cells**
+
+# cluster 8 --- CD8+ cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster8<- FindMarkers(Tcell.cluster, ident.1 = 8, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster8, n = 20)
+``` 
+
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster8<-  Tcell.cluster8 %>% arrange(desc(avg_log2FC))
+``` 
+
+
+``` {r}
+write.csv(Tcell.cluster8, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster8.csv")
+```
+
+## Using enrich R 
+
+``` {r}
+T.cluster_8<- read.csv("sub_T_clus8.csv", stringsAsFactors = TRUE)
+head(T.cluster_8)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_8<- T.cluster_8[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_8, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD8 T subsets", y="-log10(Adjusted_P_value)", title = "CD8 subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, *cluster 8* is assigned as CD8 Central memory
+
+
+# cluster 9 ---  NK/NK T cell cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster9<- FindMarkers(Tcell.cluster, ident.1 = 9, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster9, n = 20)
+``` 
+
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster9<-  Tcell.cluster9 %>% arrange(desc(avg_log2FC))
+``` 
+
+``` {r}
+write.csv(Tcell.cluster9, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster9.csv")
+```
+
+**Cluster 9 is NK T cell** 
+
+
+# cluster 10 --- CD8+ cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster10<- FindMarkers(Tcell.cluster, ident.1 = 10, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster10, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster10<-  Tcell.cluster10 %>% arrange(desc(avg_log2FC))
+``` 
+
+
+``` {r}
+write.csv(Tcell.cluster10, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster10.csv")
+```
+
+# Enrich R
+``` {r}
+T.cluster_10<- read.csv("sub_T_clus10.csv", stringsAsFactors = TRUE)
+head(T.cluster_10)
+``` 
+
+
+``` {r}
+#filter top 10
+T.cluster_10<- T.cluster_10[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_10, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD8 T subsets", y="-log10(Adjusted_P_value)", title = "CD8 subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, **cluster10** is assigned as **Naive CD8+ T cell**
+
+
+# cluster 11 --- CD8+ cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster11<- FindMarkers(Tcell.cluster, ident.1 = 11, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster11, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster11<-  Tcell.cluster11 %>% arrange(desc(avg_log2FC))
+``` 
+
+
+``` {r}
+write.csv(Tcell.cluster11, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster11.csv")
+```
+
+# Enrich R
+``` {r}
+T.cluster_11<- read.csv("sub_T_clus11.csv", stringsAsFactors = TRUE)
+head(T.cluster_11)
+``` 
+``` {r}
+#filter top 10
+T.cluster_11<- T.cluster_11[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_11, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD8 T subsets", y="-log10(Adjusted_P_value)", title = "CD8 subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, **cluster 11** is also assigned as naive CD8 T cells 
+
+
+# cluster 12 --- proliferating T cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster12<- FindMarkers(Tcell.cluster, ident.1 = 12, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster12, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster12<-  Tcell.cluster12 %>% arrange(desc(avg_log2FC))
+``` 
+
+``` {r}
+write.csv(Tcell.cluster12, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster12.csv")
+```
+
+# Enrich R
+``` {r}
+T.cluster_12<- read.csv("sub_T_clus12.csv", stringsAsFactors = TRUE)
+head(T.cluster_12)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_12<- T.cluster_12[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_12, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="proliferating T subsets", y="-log10(Adjusted_P_value)", title = "proliferating T prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, **cluster 12 ** is assigned as **CD4 proliferating T cells**
+
+
+
+# cluster 13 --- Treg cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster13<- FindMarkers(Tcell.cluster, ident.1 = 13, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster13, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster13<-  Tcell.cluster13 %>% arrange(desc(avg_log2FC))
+``` 
+
+``` {r}
+write.csv(Tcell.cluster13, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster13.csv")
+```
+
+# Enrich R
+``` {r}
+T.cluster_13<- read.csv("sub_T_clus13.csv", stringsAsFactors = TRUE)
+head(T.cluster_13)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_13<- T.cluster_13[c(1:10),] 
+
+#ggplot 
+ggplot(T.cluster_13, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="Treg subsets", y="-log10(Adjusted_P_value)", title = "Treg subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, *cluster 13* is assigned as **Memory T reg**
+
+# cluster 14 --- CD4 Cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster14<- FindMarkers(Tcell.cluster, ident.1 = 14, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster14, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster14<-  Tcell.cluster14 %>% arrange(desc(avg_log2FC))
+``` 
+
+``` {r}
+write.csv(Tcell.cluster14, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster14.csv")
+```
+
+# Enrich R
+``` {r}
+T.cluster_14<- read.csv("sub_T_clus14.csv", stringsAsFactors = TRUE)
+head(T.cluster_14)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_14<- T.cluster_14[c(1:8),] 
+
+#ggplot 
+ggplot(T.cluster_14, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="Treg subsets", y="-log10(Adjusted_P_value)", title = "Treg subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+Therefore, *cluster 14* is assigned as *CD4 central memory*
+
+# cluster 15 --- NK Cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster15<- FindMarkers(Tcell.cluster, ident.1 = 15, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster15, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster15<-  Tcell.cluster15 %>% arrange(desc(avg_log2FC))
+``` 
+
+``` {r}
+write.csv(Tcell.cluster15, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster15.csv")
+```
+
+
+#Feature plot 
+
+``` {r, fig.width= 7, fig.height= 5}
+FeaturePlot(Tcell.cluster, features = c("CD3E", "NCAM1", "CD4", "CD8A"), 
+            label = TRUE, label.size = 2,  cols = c("grey", "red"))
+``` 
+
+# Enrich R
+``` {r}
+T.cluster_15<- read.csv("sub_T_clus15.csv", stringsAsFactors = TRUE)
+head(T.cluster_15)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_15<- T.cluster_15[c(1:8),] 
+
+#ggplot 
+ggplot(T.cluster_15, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="NK subsets", y="-log10(Adjusted_P_value)", title = "NK subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+
+# cluster 16 --- CD8 Cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster16<- FindMarkers(Tcell.cluster, ident.1 = 16, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster16, n = 20)
+``` 
+
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster16<-  Tcell.cluster16 %>% arrange(desc(avg_log2FC))
+``` 
+
+``` {r}
+write.csv(Tcell.cluster16, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster16.csv")
+```
+
+# Enrich R
+``` {r}
+T.cluster_16<- read.csv("sub_T_clus16.csv", stringsAsFactors = TRUE)
+head(T.cluster_16)
+``` 
+
+``` {r}
+#filter top 10
+T.cluster_16<- T.cluster_16[c(1:8),] 
+
+#ggplot 
+ggplot(T.cluster_16, aes(reorder(Term, log.p.adjust),log.p.adjust)) + 
+  theme_classic()+ geom_bar(stat = "identity", fill= "#FF0000")  + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 13),
+        axis.title = element_text(face = "bold", size = 14), 
+        axis.text = element_text(face = "bold", size = 8), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) + 
+  labs(x="CD8 subsets", y="-log10(Adjusted_P_value)", title = "CD8 subset prediction") + 
+  coord_flip() + 
+  scale_fill_gradient(low = "red", high = "blue")
+``` 
+
+# cluster 17 --- CD8 Cluster
+
+``` {r}
+DefaultAssay(Tcell.cluster_UMAP)<- "RNA"
+
+#compare gene expression of cluster  to the rest of the cluster
+Tcell.cluster17<- FindMarkers(Tcell.cluster, ident.1 = 17, min.pct = 0.25,
+                                only.pos = TRUE)
+head(Tcell.cluster17, n = 20)
+``` 
+# order it from highest log2FC to lowest
+``` {r}
+Tcell.cluster17<-  Tcell.cluster17 %>% arrange(desc(avg_log2FC))
+``` 
+
+``` {r}
+write.csv(Tcell.cluster17, file = "Y:/Recurrent__Arthritis__Single cell/de.Tcell.cluster17.csv")
+```
+
+# Enrich R
+``` {r}
+T.cluster_17<- read.csv("sub_T_clus17.csv", stringsAsFactors = TRUE)
+head(T.cluster_17)
+``` 
+
+*Annotation* 
+
+*0= CD4+ Naïve T*
+*1= CD8+ Effector memory*
+*2= Naive Treg*
+*3= CD4+ Naïve T*
+*4= CD4+ Effector/memory* 
+*5= CD56-dim NK* 
+*6= CD4+ Effector Memory*
+*7= CD4+ Central Memory* 
+*8= CD8+ Central Memory*
+*9= NK T cell*
+*10= CD8+ Naïve T*
+*11= CD8+ Naïve T*
+*12= CD4+/CD8 proliferating T*
+*13= Memory Treg*
+*14= CD4+ Central Memory*
+*15= CD56-bright NK cell*
+*16= CD8+ Effector Memory T*
+*17= innate lymphoid cell*
+
+
+# T cell subcluster annotation 
+
+```{r}
+T_subcluster_annotation <- RenameIdents(Tcell.cluster, `0` ="CD4+ Naïve T", `1` ="CD8+ Effector memory",
+                              `2` ="Naive Treg", `3` ="CD4+ Naïve T", `4`= "CD4+ Effector/memory", `5`= "CD56-dim NK", 
+                              `6`= "CD4+ Effector Memory", `7`= "CD4+ Central Memory", `8`= "CD8+ Central Memory",
+                              `9`= "NK T cell", `10`= "CD8+ Naïve T", `11`="CD8+ Naïve T", `12`= "CD4+/CD8+ proli T", 
+                              `13`= "Memory Treg", 
+                              `14`= "CD4+ Central Memory", `15`= "CD56-bright NK cell", `16`= "CD8+ Effector Memory T", 
+                              `17`= "ILC")
+
+#save this object for subclustering 
+saveRDS(T_subcluster_annotation, file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/T_subcluster_annotation.RDS")
+```
+
+# Visualization 
+## plot umap
+``` {r,fig.width= 6, fig.height= 4}
+plota<- DimPlot(T_subcluster_annotation, reduction = "umap", label = TRUE, label.size = 3) +
+  theme_minimal() + 
+  theme(legend.text = element_text(size= 8)) + 
+  NoAxes() + NoLegend()
+plota
+```
+
+# Save high resolution figure
+
+``` {r}
+ggsave("T cell_annotated_clusters.tiff", plot = plota, height=4, width = 5, units = "in", dpi = 300)
+
+```
+
+#Dr.Kim Annotation
+
+``` {r}
+T_subcluster_annotation_kim <- RenameIdents(Tcell.cluster, `0` ="CD4+ EM", `1` ="CXCR3hi effector CD8",
+                              `2` ="Tregs", `3` ="CD4 CM", `4`= "CD4 memory", `5`= "NK", 
+                              `6`= "Th1-like", `7`= "CXCL13hi TPH", `8`= "CD8 CM",
+                              `9`= "GD T", `10`= "Activated CD8", `11`="CXCR6hi effector CD8", `12`= "Cycling T", 
+                              `13`= "Treg", 
+                              `14`= "MAIT", `15`= "NK", `16`= "Memory CD8", 
+                              `17`= "NK")
+``` 
+
+``` {r,fig.width= 6, fig.height= 4}
+plotc<- DimPlot(T_subcluster_annotation_kim, reduction = "umap", label = TRUE, label.size = 3) +
+  theme_minimal() + 
+  theme(legend.text = element_text(size= 8)) + 
+  NoAxes() + NoLegend()
+plotc
+```
+
+``` {r}
+plotb<- DimPlot(Tcell.cluster, reduction = "umap", label = TRUE) +
+  theme_minimal() + 
+  theme(legend.text = element_text(size= 8)) + 
+  NoAxes() + 
+  NoLegend()
+
+plotb 
+```` 
+## merg both plots
+
+``` {r, fig.width= 12, fig.height= 4}
+plotd<- plotb + plota + plotc
+plotd
+``` 
+
+``` {r}
+ggsave("T_cell_subcluster.tiff", plot = plotc, height=4, width = 10, units = "in", dpi = 300)
+```
+
+# marker expression of T cell subsets
+
+``` {r, fig.width= 8, fig.height= 6}
+features <- c("CD3E","CD3D", "CD4", "CD8A", "FOXP3", "CCR7", "CD69", "CXCR3", "CXCR5", "CXCR6", "CCR4", "CCR6", "KLRB1", "IL2RA", "IL7R", "KLRG1", "CXCL13", "TOX", "LAG3", "CTLA4", "PDCD1", "HAVCR2", "TIGIT", "EOMES", "CX3CR1", "MKI67", "TRGV9", 
+              "TRGV2", "FCGR3A", "NCAM1")
+
+#plot
+plotf<- VlnPlot(T_subcluster_annotation_kim, features = features, stack = TRUE, flip = TRUE) +
+  theme(legend.position = "none") + RotatedAxis() 
+plotf
+``` 
+
+``` {r, fig.width= 8, fig.height= 6}
+features <- c("CD3E", "CD3D", "CD4", "CD8A", "IFNG", "IL4", "IL10", "IL17A", "IL21", "TNF", "GZMB", "GZMM", "GZMH", 
+           "GZMK", "GNLY", "CSF2", "PRF1", "FOXP3")
+
+#plot
+plotf<- VlnPlot(T_subcluster_annotation_kim, features = features, stack = TRUE, flip = TRUE) +
+  theme(legend.position = "none") + RotatedAxis() 
+plotf
+``` 
+
+``` {r}
+ggsave("markers_expression.tiff", plot = plotf, height=8, width = 8, units = "in", dpi = 300)
+
+```
+
+# Cytokines
+*0= CD4+ Naïve T*
+*1= CD8+ Effector memory*
+*2= Naive Treg*
+*3= CD4+ Naïve T*
+*4= CD4+ Effector/memory* 
+*5= CD56-dim NK* 
+*6= CD4+ Effector Memory*
+*7= CD4+ Central Memory* 
+*8= CD8+ Central Memory*
+*9= NK T cell*
+*10= CD8+ Naïve T*
+*11= CD8+ Naïve T*
+*12= CD4+/CD8 proliferating T*
+*13= Memory Treg*
+*14= CD4+ Central Memory*
+*15= CD56-bright NK cell*
+*16= CD8+ Effector Memory T*
+*17= innate lymphoid cell*
+``` {r, fig.width= 9, fig.height= 5.5}
+Idents(T_subcluster_annotation)<- factor(Idents(T_subcluster_annotation), 
+                                         levels = c("CD4+ Naïve T", "CD8+ Effector memory", "Naive Treg", "CD4+ Effector/memory", "CD56-dim NK", "CD4+ Effector Memory", "CD4+ Central Memory", "CD8+ Central_Memory", "NK T cell", "CD8+ Naïve T", "CD4+/CD8 proliferating T", 
+                                                                                     "Memory Treg", "CD56-bright NK cell", "CD8+ Effector/Memory T", 
+                                                                                     "innate lymphoid cell"))
+dupes <- which(duplicated(rownames(T_subcluster_annotation)))
+for (i in dupes) {
+  rownames(T_subcluster_annotation)[i] <- paste0(rownames(T_subcluster_annotation)[i], "_", i)
+}
+#gene names 
+genes <- c("CD3E", "CD3D", "CD4", "CD8A", "IFNG", "IL4", "IL10", "IL17A", "IL21", "TNF", "GZMB", "GZMM", "GZMH", 
+           "GZMK", "GNLY", "CSF2", "PRF1", "FOXP3")
+
+view(T_subcluster_annotation@meta.data)
+
+#plot 
+cyto<- DotPlot(T_subcluster_annotation, features = genes, cols = c("blue", "red"), dot.scale = 8) +
+  theme_bw() + 
+  coord_flip() +
+  RotatedAxis() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size=15), 
+        axis.title= element_text(size = 14, face = "bold"), 
+        axis.text = element_text(size=13, face = "bold"), 
+        axis.text.x = element_text())
+cyto
+``` 
+#Dr.Kim__Cytokines 
+
+0= CD4 EM
+1= CXCR3hi effector CD8
+2= Tregs
+3= CD4 CM
+4= CD4 memory
+5= NK
+6= Th1-like
+7= CXCL13hi TPH
+8= CD8 CM
+9= GD T
+10 = Activated CD8 
+11= CXCR6hi effector CD8
+12=Cycling T
+13= Treg
+14= MAIT
+15= NK
+16=Memory CD8
+17= NK
+
+``` {r, fig.width= 9, fig.height= 5.5}
+Idents(T_subcluster_annotation_kim)<- factor(Idents(T_subcluster_annotation_kim), levels = c("CD4 EM", "CXCR3hi effector CD8", "Tregs", "CD4 CM", 
+                                                                                             "CD4 memory", "NK", "Th1-like", "CXCL13hi TPH", 
+                                                                                             "CD8 CM", "GD T", "Activated CD8", "CXCR6hi effector CD8", 
+                                                                                             "Cycling T", "Treg", "MAIT", "Memory CD8"))
+#gene names 
+genes <- c("CD3E", "CD3D", "CD4", "CD8A", "IFNG", "IL4", "IL10", "IL17A", "IL21", "TNF", "GZMB", "GZMM", "GZMH", "GZMK", "GNLY", "CSF2", "PRF1", "FOXP3")
+
+#plot 
+DotPlot(T_subcluster_annotation_kim, features = genes, cols = c("blue", "red"), dot.scale = 6) +
+    RotatedAxis()
+ 
+``` 
+
+
+``` {r}
+ggsave("cytokine_expression.tiff", plot = cyto, height=6, width = 9, units = "in", dpi = 300)
+
+```
+
+# RNA Trajectory analysis 
+
+**Trajectory analysis in single-cell RNA sequencing (scRNA-seq)** serves several important purposes in the study of biological systems and cellular processes. Its primary goal is to infer and visualize the developmental trajectories, differentiation paths, and lineage relationships of individual cells within a heterogeneous population. Here are some of the key purposes of performing trajectory analysis in scRNA-seq:
+
+1. Cell State Inference: Trajectory analysis helps in identifying and characterizing different cell states within a heterogeneous cell population. It allows researchers to understand how cells transition from one state to another and which genes are associated with each state.
+
+2. Differentiation Pathways: One of the primary purposes of trajectory analysis is to uncover the differentiation pathways of cells. It helps researchers trace the path cells take as they develop into various cell types, such as different types of blood cells, neurons, or immune cells.
+
+3. Temporal Analysis: Trajectory analysis can be used to infer the temporal progression of cells as they move from one state to another. Even if the actual time information is not available, pseudotime analysis can provide an abstract measure of temporal progression based on gene expression patterns.
+
+4. Cell Fate Decisions: By studying trajectories, researchers can gain insights into the decisions cells make regarding their fate. This includes understanding the factors that lead to cells adopting specific roles or functions in tissues or organs.
+
+5. Bifurcation and Branching Events: Trajectory analysis often reveals branching points or bifurcations in the developmental paths of cells. These events represent cell fate choices, where cells choose to follow one of multiple differentiation paths.
+
+6. Cell Population Heterogeneity: Trajectory analysis can help identify subpopulations of cells within a larger group, especially in the context of stem cell differentiation or disease progression. It reveals the relationships and transitions among these subpopulations.
+
+7. Identification of Marker Genes: Trajectory analysis is a valuable tool for identifying marker genes associated with different cell states and differentiation paths. These markers are critical for understanding the molecular processes driving cell fate decisions.
+
+8. Functional Insights: Understanding the trajectory of cell development and differentiation provides insights into the functions and roles of different cell types in tissues and organs. This knowledge can be applied to fields such as developmental biology, regenerative medicine, and cancer research.
+
+9. Drug Discovery and Regenerative Medicine: Trajectory analysis can aid in the development of novel therapies and regenerative medicine strategies by providing insights into how to manipulate cell fate decisions for therapeutic purposes.
+
+10 Data Visualization: Trajectory analysis results in visualizations that make it easier to interpret and communicate complex developmental relationships among cells. Visualization tools like trajectory plots and lineage trees are valuable for this purpose.
+
+**Overall, trajectory analysis is a powerful method for dissecting the dynamics of cellular development and differentiation in diverse biological contexts. It has become an essential tool in understanding the underlying biology of various processes, including tissue development, regeneration, and disease progression**
+
+
+#read T annotated T cell clusters 
+
+# 2. Convert to Seurat object to cell_data_set object 
+
+``` {r}
+library(tidyverse)
+subcluster_T<- readRDS("T_subcluster_annotation.rds")
+``` 
+
+
+
+``` {r, warning= FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(monocle3)
+cds <- as.cell_data_set(subcluster_T, group.by='ident') # SeuratWrappers
+DefaultAssay(subcluster_T)
+DefaultAssay(subcluster_T) <- "RNA"
+``` 
+
+
+# plot
+``` {r, waring= FALSE, fig.height= 5, fig.width= 8}
+library(monocle3)
+library(ggplot2)
+colData(cds)
+plot_cells(cds, color_cells_by = 'seurat_clusters',
+           label_groups_by_cluster = FALSE,
+           group_label_size = 5) +
+  theme_minimal() +
+theme(legend.position = "right")
+``` 
+
+``` {r, warnig= FALSE, fig.height= 5, fig.width= 8}
+plot_cells(cds, color_cells_by = 'ident', 
+           label_groups_by_cluster = FALSE,
+           group_label_size = 4) +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  NoLegend() + 
+  NoAxes()
+``` 
+
+# Learn the trajectory graph
+
+``` {r}
+cds <- learn_graph(cds, use_partition = FALSE) # errors
+``` 
+
+``` {r, warnig= FALSE, fig.height= 5, fig.width= 7}
+cds <- cluster_cells(cds, resolution = 1e-5)
+
+plot_cells(cds, color_cells_by = 'ident', 
+           label_groups_by_cluster = FALSE,
+           group_label_size = 4) +
+  theme(legend.position = "right") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  NoLegend() + 
+  NoAxes()
+``` 
+# 3. trajectory analysis------
+
+``` {r, warnig= FALSE, fig.height= 4, fig.width= 6}
+cds <- learn_graph(cds, use_partition = FALSE)
+
+# plot
+plot_cells(cds, color_cells_by = 'ident', 
+           label_groups_by_cluster = FALSE,
+           group_label_size = 3.5) +
+  theme(legend.position = "right") +
+   theme(legend.position = "right") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  NoLegend() + 
+  NoAxes()
+``` 
+plot_cells(cds, genes=c("CD34", "PI16", "SCARA5", "MFAP5"))
+
+# Create gene annotation file
+``` {r}
+fData(cds) # gene_annotation
+rownames(fData(cds))[1:10]
+fData(cds)$gene_short_name <- rownames(fData(cds))
+fData(cds)
+``` 
+# Order the cells by pseudotime 
+
+``` {r}
+cds <- order_cells(cds)
+``` 
+
+#plot_cells in pseudotime
+
+``` {r, warnig= FALSE, fig.height= 5, fig.width= 7}
+plot_cells(cds, color_cells_by = 'pseudotime') +
+  theme(legend.position = "right") +
+   theme(legend.position = "right") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  NoAxes()
+
+``` 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
