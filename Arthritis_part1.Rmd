@@ -1,0 +1,550 @@
+---
+title: "Arthritis Single cell"
+author: "Synat Keam"
+date: "2023-09-25"
+output:
+  word_document: default
+  html_document: default
+---
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+# Sincle cell RNASeq of recurrent arthritis part 1
+## Objective
+
+1. Perform reprocessing such as remove low quality cells 
+2. Normalization, feature scaling and clustering using TSNE and UMAP
+3. Examine cell cycling
+
+# Load data and library
+```{r}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+```
+
+# Read in individual data
+``` {r}
+#load individual data of each patient
+
+#164S !
+
+A164S<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/164S/")
+A164S2<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/164S2/")
+
+#184S !
+A184S2<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/184S2/")
+A184S3<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/184S3/")
+
+#218S !
+A218S<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/218S/")
+A218S2<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/218S2/")
+
+#SA !
+ASA5<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/SA5/")
+ASA6<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/SA6/")
+ASA7<- Read10X(data.dir = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/SA7/")
+```
+
+# Create Seurat Objects
+```{r, echo=FALSE}
+#create seurate object !
+
+#164S !
+A164S<- CreateSeuratObject(counts = A164S, project = "164S", min.cells = 3, min.features = 200)
+
+#164S2 !
+A164S2<- CreateSeuratObject(counts = A164S2, project = "164S2", min.cells = 3, min.features = 200)
+
+#184S2 !
+A184S2<- CreateSeuratObject(counts = A184S2, project = "184S2", min.cells = 3, min.features = 200)
+
+#184S3 !
+A184S3<- CreateSeuratObject(counts = A184S3, project = "184S3", min.cells = 3, min.features = 200)
+
+#218S !
+A218S<- CreateSeuratObject(counts = A218S, project = "218S", min.cells = 3, min.features = 200)
+
+#A218S2 ! 
+A218S2<- CreateSeuratObject(counts = A218S2, project = "218S2", min.cells = 3, min.features = 200)
+
+#SA5 !
+ASA5<- CreateSeuratObject(counts = ASA5, project = "SA5", min.cells = 3, min.features = 200)
+
+#ASA6 !
+ASA6<- CreateSeuratObject(counts = ASA6, project = "SA6", min.cells = 3, min.features = 200)
+
+#SA7 !
+ASA7<- CreateSeuratObject(counts = ASA7, project = "SA7", min.cells = 3, min.features = 200)
+```
+
+# Divide samples to three groups
+``` {r}
+A164S$type= "First arthritis"  
+A184S2$type = "First arthritis" 
+A218S$type = "First arthritis"  
+A164S2$type= "Second arthritis"  
+A184S3$type = "Second arthritis" 
+A218S2$type = "Second arthritis" 
+ASA5$type = "Osteoarthritis"
+ASA6$type = "Osteoarthritis"
+ASA7$type = "Osteoarthritis"
+``` 
+
+
+# Filter low quality cells for each sample !
+``` {r, fig.width= 7, fig.height= 6}
+A164S <- PercentageFeatureSet(A164S, pattern = "^MT-", col.name = "percent.mt")
+A164S_unfiltered<- VlnPlot(A164S, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+A164S<- subset(A164S, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 6300 & nCount_RNA> 500 & nCount_RNA <30000 & percent.mt < 15)
+A164S_filtered<- VlnPlot(A164S, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#plot unfiltered and filtered cells 
+A164S.plot<- A164S_unfiltered/A164S_filtered
+A164S.plot
+```
+``` {r, fig.width= 7, fig.height= 6}
+A164S2 <- PercentageFeatureSet(A164S2, pattern = "^MT-", col.name = "percent.mt")
+A164S2_unfiltered<- VlnPlot(A164S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+A164S2<- subset(A164S2, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 6500 & nCount_RNA> 800 & nCount_RNA <30000 & percent.mt < 15)
+A164S2_filtered<- VlnPlot(A164S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#plot unfiltered and filtered cells 
+A164S2.plot<- A164S2_unfiltered/A164S2_filtered
+A164S2.plot
+```
+
+``` {r, fig.width= 7, fig.height= 6}
+A184S2 <- PercentageFeatureSet(A184S2, pattern = "^MT-", col.name = "percent.mt")
+A184S2_unfiltered<- VlnPlot(A184S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+A184S2<- subset(A184S2, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 5800 & nCount_RNA> 500 & nCount_RNA <28000 & percent.mt < 15)
+A184S2_filtered<- VlnPlot(A184S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) 
+
+#plot unfiltered and filtered cells 
+A184S2.plot<- A184S2_unfiltered/A184S2_filtered
+A184S2.plot
+```
+
+``` {r, fig.width= 7, fig.height= 6}
+A184S3 <- PercentageFeatureSet(A184S3, pattern = "^MT-", col.name = "percent.mt")
+A184S3_unfiltered<- VlnPlot(A184S3, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+A184S3<- subset(A184S3, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 6200 & nCount_RNA> 800 & nCount_RNA <34000 & percent.mt < 10)
+A184S3_filtered<- VlnPlot(A184S3, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) 
+
+#plot unfiltered and filtered cells 
+A184S3.plot<- A184S2_unfiltered/A184S2_filtered
+A184S3.plot
+```
+
+``` {r, fig.width= 7, fig.height= 6}
+A218S <- PercentageFeatureSet(A218S, pattern = "^MT-", col.name = "percent.mt")
+A218S_unfiltered<- VlnPlot(A218S, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+A218S<- subset(A218S, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 5800 & nCount_RNA> 500 & nCount_RNA <23000 & percent.mt < 15)
+A218S_filtered<- VlnPlot(A218S, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) 
+
+#plot unfiltered and filtered cells 
+A218S.plot<- A218S_unfiltered/A218S_filtered
+A218S.plot
+```
+
+``` {r, fig.width= 7, fig.height= 6}
+A218S2 <- PercentageFeatureSet(A218S2, pattern = "^MT-", col.name = "percent.mt")
+A218S2_unfiltered<- VlnPlot(A218S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+A218S2<- subset(A218S2, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 6000 & nCount_RNA> 500 & nCount_RNA <25000 & percent.mt < 15)
+A218S2_filtered<- VlnPlot(A218S2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) 
+
+#plot unfiltered and filtered cells 
+A218S2.plot<- A218S2_unfiltered/A218S2_filtered
+A218S2.plot
+```
+
+
+``` {r, fig.width= 7, fig.height= 6}
+ASA5 <- PercentageFeatureSet(ASA5, pattern = "^MT-", col.name = "percent.mt")
+ASA5_unfiltered<- VlnPlot(ASA5, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+ASA5<- subset(ASA5, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 7000 & nCount_RNA> 500& nCount_RNA <30000 & percent.mt < 15)
+ASA5_filtered<- VlnPlot(ASA5, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) 
+
+#plot unfiltered and filtered cells 
+ASA5.plot<- ASA5_unfiltered/ASA5_filtered
+ASA5.plot
+```
+
+``` {r, fig.width= 7, fig.height= 6}
+ASA6 <- PercentageFeatureSet(ASA6, pattern = "^MT-", col.name = "percent.mt")
+ASA6_unfiltered<- VlnPlot(ASA6, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+ASA6<- subset(ASA6, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 7500 & nCount_RNA> 800 & nCount_RNA <50000 & percent.mt < 15)
+ASA6_filtered<- VlnPlot(ASA6, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) 
+
+#plot unfiltered and filtered cells 
+ASA6.plot<- ASA6_unfiltered/ASA6_filtered
+ASA6.plot
+```
+
+
+
+
+``` {r, fig.width= 7, fig.height= 6}
+ASA7 <- PercentageFeatureSet(ASA7, pattern = "^MT-", col.name = "percent.mt")
+ASA7_unfiltered<- VlnPlot(ASA7, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#filtered low quality cells
+ASA7<- subset(ASA7, subset = nFeature_RNA > 500 
+              & nFeature_RNA < 7500 & nCount_RNA> 800 & nCount_RNA <48000 & percent.mt < 10)
+ASA7_filtered<- VlnPlot(ASA7, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) 
+
+#plot unfiltered and filtered cells 
+ASA7.plot<- ASA7_unfiltered/ASA7_filtered
+ASA7.plot
+```
+
+# Merge seurat objects
+``` {r, fig.width= 10, fig.height= 5}
+library(tidyverse)
+#merge seurat object 
+All_arthritis <- merge(A164S, y=c(A164S2, A184S2, A184S3, A218S, A218S2, ASA5, ASA6, ASA7))
+rm(All_arthritis)
+
+#save this object
+saveRDS(All_arthritis, file = "Y:/All_arthritis.RDS")
+``` 
+
+
+# Feature-Feature relationship
+``` {r, fig.width= 10, fig.height= 5}
+#Visualize feature-feature relationship 
+#
+plot1 <- FeatureScatter(All_arthritis, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) 
+plot2 <- FeatureScatter(All_arthritis, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident") +
+ theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+plot1|plot2 
+```
+
+# Filter noise genes 
+``` {r}
+# Filter MALAT1
+Arthritis.merge.flt <- All_arthritis[!grepl("MALAT1", rownames(All_arthritis)), ]
+
+# Filter Mitocondria
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MT-", rownames(Arthritis.merge.flt)), ]
+
+#Mitochondria
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MT\\.", rownames(Arthritis.merge.flt)), ]
+
+#Filter gene LOC
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^LOC(0-9)", rownames(Arthritis.merge.flt)), ]
+
+# Filter Ribossomal gene 
+Arthritis.merge.flt <- Arthritis.merge.flt[ ! grepl('^RP[SL]', rownames(Arthritis.merge.flt)), ]
+
+# HSPA
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^HSPA", rownames(Arthritis.merge.flt)), ]
+
+# MTRNR
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^MTRNR", rownames(Arthritis.merge.flt)), ]
+
+# TR pattern
+Arthritis.merge.flt <- Arthritis.merge.flt[!grepl("^TR(A|B|G|D)V", rownames(Arthritis.merge.flt)), ]
+```  
+
+
+# see highly variable genes
+``` {r, fig.width= 10, fig.height= 4}
+# Seurat Standard work flow (SWF)
+All_arthritis_normal <- NormalizeData(Arthritis.merge.flt,
+                                      normalization.method = "LogNormalize", 
+                                      scale.factor = 10000, 
+                                      verbose = FALSE) 
+All_arthritis_normal <- FindVariableFeatures(All_arthritis_normal,
+                                             selection.method = "vst",
+                                             nfeatures = 2000, 
+                                             verbose = FALSE) 
+top10<- head(VariableFeatures(All_arthritis_normal), 10)
+top10
+```
+
+
+#plot highly variable features!
+``` {r, warning= FALSE, fig.height= 5, fig.width= 7}
+High_feature1 <- VariableFeaturePlot(All_arthritis_normal)
+High_feature2 <- LabelPoints(plot = High_feature1, points = top10, repel = TRUE)
+High_feature2
+```
+
+# Determine the number of principle coponents that explain variation in the data
+``` {r}
+#feature scaling !
+All_arthritis_normal <- ScaleData(All_arthritis_normal, 
+                                  vars.to.regress = c("percent.mt", "nFeature_RNA", "nCount_RNA"),
+                                  verbose = FALSE) 
+
+#Run PCA !
+All_arthritis_normal <- RunPCA(All_arthritis_normal,verbose = FALSE)
+
+#Plot PC components ! 
+ElbowPlot(All_arthritis_normal, ndims = 50,reduction = "pca") +
+  ggtitle("Number of principle component")  + 
+  theme(plot.title = element_text(hjust = 0.5))
+``` 
+
+# Visulization of PC1 and PC2 in heatmap 
+``` {r, fig.width= 8, fig.height= 7}
+#heatmap of the first principle component
+DimHeatmap(All_arthritis_normal, dims = 1:6, cells = 500, balanced = TRUE, ncol = 3)
+```
+
+# Integration using Harmony for TSNE
+``` {r}
+#Integration using harmony for tsne
+library(harmony)
+set.seed(198752)
+All_arthritis_integration<- RunHarmony(All_arthritis_normal, group.by.vars = "orig.ident")
+
+# save integration object
+saveRDS(All_arthritis_integration, file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/harmony.RDS")
+
+# Run TSNE
+All_arthritis_integration_TSNE<- RunTSNE(All_arthritis_integration, reduction = "harmony", dims = 1:45)
+All_arthritis_integration_TSNE <- FindNeighbors(All_arthritis_integration_TSNE, reduction= "harmony", dims = 1:45)
+All_arthritis_integration_TSNE <- FindClusters(All_arthritis_integration_TSNE, resolution = 0.5)
+
+# Look at cluster IDs of the first 5 cells
+head(Idents(All_arthritis_integration_TSNE), 5)
+```
+# Visualize all samples in TSNE 
+``` {r, fig.width= 7, fig.height= 6}
+#Run non-linear dimensional reduction
+DimPlot(All_arthritis_integration_TSNE, reduction = "tsne", label = TRUE, size= 10) + 
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5)) +  
+  NoLegend()
+``` 
+
+``` {r, fig.width= 7, fig.height= 5}
+
+FeaturePlot(All_arthritis_integration_TSNE, features = c("CD3E", "CD8A", "CD4", "FOXP3"), pt.size = 0.2,
+    ncol = 2, reduction = "tsne")
+```
+
+
+# Visualize All the three groups in TSNE 
+``` {r, fig.width= 6, fig.height= 6}
+DimPlot(All_arthritis_integration_TSNE, reduction = "tsne", group.by = "orig.ident", label = FALSE) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
+  theme(legend.position = "bottom") +
+  ggtitle("SPLIT BY GROUPS") 
+``` 
+
+# Visualize the three group side by side in TSNE 
+``` {r, fig.width= 10, fig.height= 3.5}
+DimPlot(All_arthritis_integration_TSNE, reduction = "tsne", split.by = "type", label = TRUE) + 
+  theme_void() +
+NoLegend() +
+  theme(plot.title = element_text(face = "bold"))
+  
+``` 
+
+# Visualize individual sample in TSNE
+``` {r, fig.width= 7, fig.height= 7}
+DimPlot(All_arthritis_integration_TSNE, reduction = "tsne", 
+        split.by = "orig.ident", ncol = 3, label = TRUE) +
+  theme_void() +
+NoLegend() 
+``` 
+# Integration for UMAP
+``` {r, fig.width= 5, fig.height= 3.8}
+#harmony
+All_arthritis_integration_UMAP<- RunHarmony(All_arthritis_normal, group.by.vars = "orig.ident")
+
+#find neigbor
+All_arthritis_integration_UMAP <- FindNeighbors(All_arthritis_integration_UMAP, reduction= "harmony", dims = 1:40)
+
+#find cluster
+All_arthritis_integration_UMAP <- FindClusters(All_arthritis_integration_UMAP, resolution = 0.5)
+
+#set seed for reproducibility
+All_arthritis_integration_UMAP <- RunUMAP(All_arthritis_integration_UMAP, reduction = "harmony", dims = 1:40,
+                                   n.neighbors = 30, min.dist = 0.4, spread =3)
+
+All_arthritis_integration_UMAP <- RunUMAP(All_arthritis_integration_UMAP, reduction = "harmony", dims = 1:40,
+                                          n.neighbors = 30, min.dist = 0.7, spread =3, n.components = 2)
+
+#Dimplot
+DimPlot(All_arthritis_integration_UMAP, reduction = "umap", label = TRUE) +
+  theme_void() +
+  NoLegend() +
+  ggtitle("All samples") 
+``` 
+#dimplot 
+```{r, fig.width= 5, fig.height= 3.8}
+DimPlot(All_arthritis_integration_UMAP, reduction = "umap", label = TRUE ) +
+  theme_minimal() +
+  NoLegend() +
+  ggtitle("All samples") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  NoAxes()
+``` 
+
+
+#save umap object 
+
+``` {r}
+saveRDS(All_arthritis_integration_UMAP, file = "Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/Filtered.RDS")
+
+# Look at cluster IDs of the first 5 cells
+head(Idents(All_arthritis_integration_UMAP), 5)
+```
+
+```{r}
+#read umap object back-in
+Filtered_cell<- readRDS("Y:/Recurrent__Arthritis__Single cell/Single_Cell_Arthritis/Filtered.RDS")
+``` 
+
+
+# All sample visualization in UMAP
+``` {r, fig.width= 5, fig.height= 3.8}
+DimPlot(Filtered_cell, reduction = "umap", label = TRUE) +
+  theme_minimal() +
+  NoLegend() +
+  ggtitle("All samples") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  NoAxes()
+``` 
+
+# Visualize All the three groups in UMAP
+``` {r,  fig.width= 4.5, fig.height= 4.7}
+DimPlot(Filtered_cell, reduction = "umap", group.by = "type") + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  ggtitle("ARTHRITIS BY GROUP") +
+  theme(legend.position = "bottom")
+``` 
+
+# Visualize the three group side by side in UMAP
+``` {r, fig.width= 8, fig.height= 3}
+DimPlot(Filtered_cell, reduction = "umap", split.by = "type", ncol = 3, label = TRUE) +
+  theme_minimal() +
+  NoLegend() 
+``` 
+
+# Visualize individual sample side by side in UMAP
+``` {r, fig.width= 8, fig.height= 8}
+DimPlot(Filtered_cell, reduction = "umap", split.by = "orig.ident", ncol = 3, label = TRUE)  +
+  theme_minimal() +
+NoLegend()
+``` 
+# Cell Cycling 
+``` {r, fig.width= 8, fig.height= 6}
+#examine cell cycle!
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+# Create our Seurat object and complete the initalization steps
+cellcycle <- NormalizeData(All_arthritis)
+cellcycle <- FindVariableFeatures(cellcycle, selection.method = "vst")
+cellcycle <- ScaleData(cellcycle, features = rownames(cellcycle))
+
+#run PCA
+cellcycle <- RunPCA(cellcycle, features = VariableFeatures(cellcycle), ndims.print = 6:10, nfeatures.print = 10)
+DimHeatmap(cellcycle, dims = c(1, 2))
+```
+
+``` {r}
+#Assign Cell-Cycle Scores
+cellcycle <- CellCycleScoring(cellcycle, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+
+# view cell cycle scores and phase assignments
+head(cellcycle[[]])
+```
+
+# plot S phase and G2M phase score
+``` {r, fig.width=7, fig.height= 4}
+VlnPlot(cellcycle, features = c("S.Score", "G2M.Score"), group.by = "orig.ident") 
+``` 
+ 
+
+
+## Cluster Tree! 
+https://ouyanglab.com/singlecell/clust.html 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
